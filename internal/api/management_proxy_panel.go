@@ -23,6 +23,12 @@ const managementProxyBatchScript = `(function(){
 function install(){var root=document.getElementById('cpa-proxy-panel');if(!root||root.querySelector('#cpa-batch-update'))return;var toolbar=root.querySelector('.toolbar'),before=root.querySelector('#cpa-import');if(!toolbar||!before)return;var update=document.createElement('button');update.id='cpa-batch-update';update.textContent='批量更新';var remove=document.createElement('button');remove.id='cpa-batch-delete';remove.className='danger';remove.textContent='删除选中';toolbar.insertBefore(update,before);toolbar.insertBefore(remove,before);function ids(){return Array.prototype.map.call(root.querySelectorAll('#cpa-body input[data-s]:checked'),function(e){return e.dataset.s})}function call(method,path,body){return fetch(path,{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){if(!r.ok)throw Error('请求失败（'+r.status+'）');return r.json()})}update.onclick=function(){var x=ids();if(!x.length){alert('请先选择代理');return}var s=prompt('批量设置状态：active 或 inactive','active');if(s!=='active'&&s!=='inactive')return;call('PUT','/v0/management/proxy-accounts/batch',{ids:x,patch:{status:s}}).then(function(){location.reload()}).catch(function(e){alert(e.message)})};remove.onclick=function(){var x=ids();if(!x.length){alert('请先选择代理');return}if(!confirm('确定删除选中的代理？'))return;call('DELETE','/v0/management/proxy-accounts/batch',{ids:x}).then(function(){location.reload()}).catch(function(e){alert(e.message)})}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install);else setTimeout(install,500);setInterval(install,1000)})();`
 
+const managementProxyNavigationScript = `(function(){
+var root=document.getElementById('cpa-proxy-panel');if(!root)return;var launcher=null;
+function nativeItem(label){var nodes=document.querySelectorAll('button,a,[role="button"]');for(var i=0;i<nodes.length;i++){var text=(nodes[i].textContent||'').replace(/\\s+/g,' ').trim();if(text===label||text==='IP Management')return nodes[i]}return null}
+function ensure(){var target=nativeItem('AI 提供商')||nativeItem('AI Providers');if(!target)return;if(!launcher){launcher=document.createElement('button');launcher.type='button';launcher.id='cpa-proxy-launcher';launcher.textContent='IP 管理';launcher.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();root.hidden=false;window.dispatchEvent(new Event('cpa-proxy-show'))})}if(launcher.parentNode!==target.parentNode||launcher.nextSibling!==target){target.parentNode.insertBefore(launcher,target)}var style=getComputedStyle(target);launcher.className=target.className;launcher.style.cssText='display:flex;align-items:center;width:100%;height:'+style.height+';padding:'+style.padding+';margin:'+style.margin+';border:0;border-radius:'+style.borderRadius+';background:transparent;color:'+style.color+';font:'+style.font+';text-align:left;cursor:pointer;box-sizing:border-box;';if(!root.hidden){launcher.style.background='#111827';launcher.style.color='#fff'}else{launcher.style.background='transparent';launcher.style.color=style.color}}
+document.addEventListener('click',function(event){if(root.hidden||!launcher)return;if(root.contains(event.target)||launcher.contains(event.target))return;var clicked=event.target.closest&&event.target.closest('button,a,[role="button"]');if(clicked){root.hidden=true;ensure()}},true);var last=location.href;window.addEventListener('popstate',function(){root.hidden=true;ensure()});var old=root.querySelector('#cpa-proxy-nav');if(old)old.remove();ensure();setInterval(function(){if(location.href!==last){last=location.href;root.hidden=true}ensure()},1000)})();`
+
 func injectManagementProxyPanel(data []byte) []byte {
 	marker := []byte("</body>")
 	idx := bytes.LastIndex(bytes.ToLower(data), marker)
@@ -30,10 +36,17 @@ func injectManagementProxyPanel(data []byte) []byte {
 		return data
 	}
 	panelScript := strings.Replace(managementProxyPanelScript, "document.body.appendChild(root);var state={token:'',items:[],files:[],selected:[],loading:false};", "document.body.appendChild(root);var state={token:window.__cpaManagementKey||'',items:[],files:[],selected:[],loading:false};window.addEventListener('cpa-management-key',function(event){state.token=event.detail||'';if(state.token)load()});", 1)
+	panelScript = strings.Replace(panelScript, "<button class=\"nav\" id=\"cpa-proxy-nav\">IP 管理</button>", "", 1)
+	panelScript = strings.Replace(panelScript, "window.addEventListener('cpa-management-key',function(event){state.token=event.detail||'';if(state.token)load()});", "window.addEventListener('cpa-management-key',function(event){state.token=event.detail||'';if(state.token)load()});window.addEventListener('cpa-proxy-show',function(){if(state.token)load()});", 1)
 	panelScript = strings.Replace(panelScript, "function load(){if(state.loading)return;", "function load(){if(!state.token)return;if(state.loading)return;", 1)
+	panelScript = strings.Replace(panelScript, "render();root.hidden=false;msg('')", "render();msg('')", 1)
+	panelScript = strings.Replace(panelScript, "setTimeout(load,250);setInterval(load,5000)", "setInterval(function(){if(!root.hidden)load()},5000)", 1)
 	script := append([]byte("<script>"), managementProxyAuthBridgeScript...)
 	script = append(script, []byte("</script><script>")...)
 	script = append(script, panelScript...)
+	script = append(script, []byte("</script>")...)
+	script = append(script, []byte("<script>")...)
+	script = append(script, managementProxyNavigationScript...)
 	script = append(script, []byte("</script>")...)
 	script = append(script, []byte("<script>")...)
 	script = append(script, managementProxyBatchScript...)
