@@ -368,7 +368,9 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
 	}
 
 	if provided == "" {
-		fail()
+		// Missing credentials are common during the management UI bootstrap and
+		// must not be treated as a brute-force attempt. Only an explicitly
+		// supplied but invalid credential contributes to the temporary IP ban.
 		return false, http.StatusUnauthorized, "missing management key"
 	}
 
