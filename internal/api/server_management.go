@@ -66,10 +66,14 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/proxy-url", s.mgmt.DeleteProxyURL)
 		mgmt.GET("/proxy-accounts", s.mgmt.ListProxyAccounts)
 		mgmt.POST("/proxy-accounts", s.mgmt.CreateProxyAccount)
+		mgmt.POST("/proxy-accounts/batch", s.mgmt.CreateProxyAccountsBatch)
+		mgmt.PUT("/proxy-accounts/batch", s.mgmt.UpdateProxyAccountsBatch)
+		mgmt.DELETE("/proxy-accounts/batch", s.mgmt.DeleteProxyAccountsBatch)
 		mgmt.GET("/proxy-accounts/:id", s.mgmt.GetProxyAccount)
 		mgmt.PUT("/proxy-accounts/:id", s.mgmt.UpdateProxyAccount)
 		mgmt.PATCH("/proxy-accounts/:id", s.mgmt.UpdateProxyAccount)
 		mgmt.DELETE("/proxy-accounts/:id", s.mgmt.DeleteProxyAccount)
+		mgmt.POST("/proxy-accounts/:id/test", s.mgmt.TestProxyAccount)
 
 		mgmt.POST("/api-call", s.mgmt.APICall)
 

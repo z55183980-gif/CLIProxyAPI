@@ -24,24 +24,37 @@ const storageFileName = ".proxy-accounts"
 
 // ProxyAccount is a reusable upstream proxy definition.
 type ProxyAccount struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Protocol      string     `json:"protocol"`
-	Host          string     `json:"host"`
-	Port          int        `json:"port"`
-	Username      string     `json:"username,omitempty"`
-	Password      string     `json:"password,omitempty"`
-	Status        string     `json:"status"`
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	FallbackMode  string     `json:"fallback_mode,omitempty"`
-	BackupProxyID string     `json:"backup_proxy_id,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Protocol        string     `json:"protocol"`
+	Host            string     `json:"host"`
+	Port            int        `json:"port"`
+	Username        string     `json:"username,omitempty"`
+	Password        string     `json:"password,omitempty"`
+	Status          string     `json:"status"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	FallbackMode    string     `json:"fallback_mode,omitempty"`
+	BackupProxyID   string     `json:"backup_proxy_id,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	LastTestAt      *time.Time `json:"last_test_at,omitempty"`
+	LatencyMs       *int64     `json:"latency_ms,omitempty"`
+	LatencyStatus   string     `json:"latency_status,omitempty"`
+	LatencyMessage  string     `json:"latency_message,omitempty"`
+	ObservedIP      string     `json:"observed_ip,omitempty"`
+	ObservedCountry string     `json:"observed_country,omitempty"`
+	ObservedRegion  string     `json:"observed_region,omitempty"`
+	ObservedCity    string     `json:"observed_city,omitempty"`
+	AccountCount    int64      `json:"account_count,omitempty"`
+	ExpiryWarnDays  int        `json:"expiry_warn_days"`
 }
 
 // Public returns the account fields safe to send to the management UI.
 func (p ProxyAccount) Public() ProxyAccount {
 	p.Password = ""
+	if p.ExpiresAt != nil && !p.ExpiresAt.IsZero() && !time.Now().Before(p.ExpiresAt.UTC()) {
+		p.Status = "expired"
+	}
 	return p
 }
 
@@ -240,6 +253,14 @@ func (r *Registry) Update(id string, account ProxyAccount) (ProxyAccount, error)
 	}
 	account.ID = id
 	account.CreatedAt = old.CreatedAt
+	account.LastTestAt = old.LastTestAt
+	account.LatencyMs = old.LatencyMs
+	account.LatencyStatus = old.LatencyStatus
+	account.LatencyMessage = old.LatencyMessage
+	account.ObservedIP = old.ObservedIP
+	account.ObservedCountry = old.ObservedCountry
+	account.ObservedRegion = old.ObservedRegion
+	account.ObservedCity = old.ObservedCity
 	if account.Password == "" {
 		account.Password = old.Password
 	}
@@ -256,6 +277,48 @@ func (r *Registry) Update(id string, account ProxyAccount) (ProxyAccount, error)
 		return ProxyAccount{}, err
 	}
 	return account.Public(), nil
+}
+
+// UpdateTestState persists the latest connectivity probe result.
+func (r *Registry) UpdateTestState(id string, result TestResult) error {
+	if r == nil {
+		return fmt.Errorf("proxy registry is nil")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.ensureLoadedLocked(); err != nil {
+		return err
+	}
+	account, ok := r.accounts[strings.TrimSpace(id)]
+	if !ok {
+		return os.ErrNotExist
+	}
+	now := time.Now().UTC()
+	account.LastTestAt = &now
+	account.LatencyMs = &result.LatencyMs
+	account.LatencyStatus = result.Status
+	account.LatencyMessage = result.Message
+	account.ObservedIP = result.IP
+	account.ObservedCountry = result.Country
+	account.ObservedRegion = result.Region
+	account.ObservedCity = result.City
+	account.UpdatedAt = now
+	r.accounts[account.ID] = account
+	if err := r.saveLocked(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// TestResult contains a proxy connectivity and egress-location probe result.
+type TestResult struct {
+	LatencyMs int64  `json:"latency_ms"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	IP        string `json:"ip,omitempty"`
+	Country   string `json:"country,omitempty"`
+	Region    string `json:"region,omitempty"`
+	City      string `json:"city,omitempty"`
 }
 
 // Delete removes an account by ID.
@@ -402,14 +465,20 @@ func validateAccount(account *ProxyAccount) error {
 	if account.Port < 1 || account.Port > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535")
 	}
-	if account.Status != "active" && account.Status != "disabled" {
-		return fmt.Errorf("status must be active or disabled")
+	if account.Status == "disabled" {
+		account.Status = "inactive"
+	}
+	if account.Status != "active" && account.Status != "inactive" {
+		return fmt.Errorf("status must be active or inactive")
 	}
 	if account.FallbackMode != "none" && account.FallbackMode != "direct" && account.FallbackMode != "proxy" {
 		return fmt.Errorf("fallback_mode must be none, direct, or proxy")
 	}
 	if account.FallbackMode == "proxy" && strings.TrimSpace(account.BackupProxyID) == "" {
 		return fmt.Errorf("backup_proxy_id is required for proxy fallback")
+	}
+	if account.ExpiryWarnDays < 0 {
+		return fmt.Errorf("expiry_warn_days must not be negative")
 	}
 	if _, errParse := proxyutil.Parse(fmt.Sprintf("%s://%s", account.Protocol, net.JoinHostPort(account.Host, strconv.Itoa(account.Port)))); errParse != nil {
 		return fmt.Errorf("invalid proxy endpoint: %w", errParse)
