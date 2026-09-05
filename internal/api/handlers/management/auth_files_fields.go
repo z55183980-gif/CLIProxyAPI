@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/credentialweight"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/proxyregistry"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher/synthesizer"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -291,6 +292,22 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 		if targetAuth.Metadata == nil {
 			targetAuth.Metadata = make(map[string]any)
 		}
+		if fieldPath == "proxy_id" {
+			if proxyID, okProxyID := value.(string); okProxyID && strings.TrimSpace(proxyID) != "" {
+				registry, errRegistry := h.proxyRegistry()
+				if errRegistry != nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": errRegistry.Error()})
+					return
+				}
+				if _, found, errGet := registry.Get(proxyID); errGet != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": errGet.Error()})
+					return
+				} else if !found {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "proxy account not found"})
+					return
+				}
+			}
+		}
 
 		if fieldPath == coreauth.AttributeWeight {
 			if value == nil {
@@ -548,6 +565,21 @@ func syncAuthFileMetadataFields(auth *coreauth.Auth, touchedRoots map[string]str
 	if _, ok := touchedRoots["proxy_url"]; ok {
 		if proxyURL, okString := auth.Metadata["proxy_url"].(string); okString {
 			auth.ProxyURL = strings.TrimSpace(proxyURL)
+		}
+	}
+	if _, ok := touchedRoots["proxy_id"]; ok {
+		proxyID, _ := auth.Metadata["proxy_id"].(string)
+		proxyID = strings.TrimSpace(proxyID)
+		if proxyID == "" {
+			auth.ProxyURL = ""
+			delete(auth.Metadata, "proxy_url")
+		} else if proxyURL, selected := proxyregistry.ResolveMetadataProxy(auth.Metadata); selected {
+			auth.ProxyURL = proxyURL
+			if proxyURL == "" {
+				delete(auth.Metadata, "proxy_url")
+			} else {
+				auth.Metadata["proxy_url"] = proxyURL
+			}
 		}
 	}
 	if _, ok := touchedRoots["headers"]; ok {

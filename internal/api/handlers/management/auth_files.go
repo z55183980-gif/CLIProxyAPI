@@ -16,6 +16,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/credentialweight"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/proxyregistry"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
@@ -251,6 +252,12 @@ func (h *Handler) listAuthFilesFromDisk(c *gin.Context) {
 				if projectID := strings.TrimSpace(gjson.GetBytes(data, "project_id").String()); projectID != "" {
 					fileData["project_id"] = projectID
 				}
+				if proxyID := strings.TrimSpace(gjson.GetBytes(data, "proxy_id").String()); proxyID != "" {
+					fileData["proxy_id"] = proxyID
+					if proxy, found, errProxy := proxyregistry.ConfigureForAuthDir(h.cfg.AuthDir).Get(proxyID); errProxy == nil && found {
+						fileData["proxy_name"] = proxy.Name
+					}
+				}
 				if pv := gjson.GetBytes(data, "priority"); pv.Exists() {
 					switch pv.Type {
 					case gjson.Number:
@@ -353,6 +360,12 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth) gin.H {
 	}
 	if projectID := authProjectID(auth); projectID != "" {
 		entry["project_id"] = projectID
+	}
+	if proxyID := authProxyID(auth); proxyID != "" {
+		entry["proxy_id"] = proxyID
+		if proxy, found, errProxy := proxyregistry.ConfigureForAuthDir(h.cfg.AuthDir).Get(proxyID); errProxy == nil && found {
+			entry["proxy_name"] = proxy.Name
+		}
 	}
 	if accountType, account := auth.AccountInfo(); accountType != "" || account != "" {
 		if accountType != "" {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/proxyregistry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 	log "github.com/sirupsen/logrus"
@@ -32,6 +33,7 @@ func (s *FileSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth, e
 	if ctx == nil || ctx.AuthDir == "" {
 		return out, nil
 	}
+	proxyregistry.ConfigureForAuthDir(ctx.AuthDir)
 
 	entries, err := os.ReadDir(ctx.AuthDir)
 	if err != nil {
@@ -74,6 +76,9 @@ func SynthesizeAuthFile(ctx *SynthesisContext, fullPath string, data []byte) ([]
 func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([]*coreauth.Auth, error) {
 	if ctx == nil || len(data) == 0 {
 		return nil, nil
+	}
+	if ctx.AuthDir != "" {
+		proxyregistry.ConfigureForAuthDir(ctx.AuthDir)
 	}
 	now := ctx.Now
 	cfg := ctx.Config
@@ -135,6 +140,9 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 				coreauth.SetOAuthModelAliasesAttribute(auth, perAccountModelAliases)
 				ApplyAuthExcludedModelsMeta(auth, cfg, perAccountExcluded, "oauth")
 				coreauth.ApplyCustomHeadersFromMetadata(auth)
+				if resolved, selected := proxyregistry.ResolveMetadataProxy(auth.Metadata); selected {
+					auth.ProxyURL = resolved
+				}
 				applyFingerprintProfileAttribute(auth, metadata)
 			}
 			return auths, nil
@@ -161,6 +169,9 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 	proxyURL := ""
 	if p, ok := metadata["proxy_url"].(string); ok {
 		proxyURL = p
+	}
+	if resolved, selected := proxyregistry.ResolveMetadataProxy(metadata); selected {
+		proxyURL = resolved
 	}
 
 	prefix := ""

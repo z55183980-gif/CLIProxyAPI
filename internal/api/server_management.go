@@ -64,6 +64,12 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/proxy-url", s.mgmt.PutProxyURL)
 		mgmt.PATCH("/proxy-url", s.mgmt.PutProxyURL)
 		mgmt.DELETE("/proxy-url", s.mgmt.DeleteProxyURL)
+		mgmt.GET("/proxy-accounts", s.mgmt.ListProxyAccounts)
+		mgmt.POST("/proxy-accounts", s.mgmt.CreateProxyAccount)
+		mgmt.GET("/proxy-accounts/:id", s.mgmt.GetProxyAccount)
+		mgmt.PUT("/proxy-accounts/:id", s.mgmt.UpdateProxyAccount)
+		mgmt.PATCH("/proxy-accounts/:id", s.mgmt.UpdateProxyAccount)
+		mgmt.DELETE("/proxy-accounts/:id", s.mgmt.DeleteProxyAccount)
 
 		mgmt.POST("/api-call", s.mgmt.APICall)
 
@@ -316,5 +322,14 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
-	c.File(filePath)
+	data, errRead := os.ReadFile(filePath)
+	if errRead != nil {
+		log.WithError(errRead).Error("failed to read management control panel asset")
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	if !strings.Contains(string(data), "cpa-proxy-panel") {
+		data = injectManagementProxyPanel(data)
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 }

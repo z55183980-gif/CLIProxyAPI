@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/proxyregistry"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
@@ -226,6 +227,7 @@ func (s *FileTokenStore) resolveDeletePath(id string) (string, error) {
 }
 
 func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Auth, error) {
+	proxyregistry.ConfigureForAuthDir(baseDir)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -291,6 +293,9 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 					return nil, errWeight
 				}
 				cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
+				if resolved, selected := proxyregistry.ResolveMetadataProxy(auth.Metadata); selected {
+					auth.ProxyURL = resolved
+				}
 			}
 			return auths, nil
 		}
@@ -351,6 +356,9 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 		auth.Attributes["email"] = email
 	}
 	cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
+	if resolved, selected := proxyregistry.ResolveMetadataProxy(auth.Metadata); selected {
+		auth.ProxyURL = resolved
+	}
 	return []*cliproxyauth.Auth{auth}, nil
 }
 
