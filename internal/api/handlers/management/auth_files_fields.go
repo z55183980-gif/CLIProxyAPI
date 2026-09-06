@@ -562,11 +562,6 @@ func syncAuthFileMetadataFields(auth *coreauth.Auth, touchedRoots map[string]str
 			auth.Prefix = strings.TrimSpace(prefix)
 		}
 	}
-	if _, ok := touchedRoots["proxy_url"]; ok {
-		if proxyURL, okString := auth.Metadata["proxy_url"].(string); okString {
-			auth.ProxyURL = strings.TrimSpace(proxyURL)
-		}
-	}
 	if _, ok := touchedRoots["proxy_id"]; ok {
 		proxyID, _ := auth.Metadata["proxy_id"].(string)
 		proxyID = strings.TrimSpace(proxyID)
@@ -580,6 +575,11 @@ func syncAuthFileMetadataFields(auth *coreauth.Auth, touchedRoots map[string]str
 			} else {
 				auth.Metadata["proxy_url"] = proxyURL
 			}
+		}
+	}
+	if _, ok := touchedRoots["proxy_url"]; ok {
+		if proxyURL, okString := auth.Metadata["proxy_url"].(string); okString {
+			auth.ProxyURL = strings.TrimSpace(proxyURL)
 		}
 	}
 	if _, ok := touchedRoots["headers"]; ok {
