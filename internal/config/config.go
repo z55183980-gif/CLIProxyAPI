@@ -57,6 +57,10 @@ type Config struct {
 	// UsageStatisticsEnabled toggles in-memory usage aggregation; when false, usage data is discarded.
 	UsageStatisticsEnabled bool `yaml:"usage-statistics-enabled" json:"usage-statistics-enabled"`
 
+	// Pricing configures optional token pricing and durable billing. It is
+	// independent from UsageStatisticsEnabled and disabled by default.
+	Pricing PricingConfig `yaml:"pricing" json:"pricing"`
+
 	// RedisUsageQueueRetentionSeconds controls how long usage queue items are retained
 	// in memory for Management API consumers.
 	// Default: 60. Max: 3600.

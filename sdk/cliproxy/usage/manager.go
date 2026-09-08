@@ -20,7 +20,10 @@ const AutoServiceTier = "auto"
 
 // Record contains the usage statistics captured for a single provider request.
 type Record struct {
-	Provider string
+	// RequestID is the stable client/proxy request identifier when available.
+	// Billing sinks should use it as the primary idempotency key.
+	RequestID string
+	Provider  string
 	// ExecutorType stores the concrete executor type that handled the request.
 	ExecutorType string
 	Model        string

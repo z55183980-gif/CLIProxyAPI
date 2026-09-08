@@ -198,6 +198,9 @@ func (b *Builder) Build() (*Service, error) {
 	if errValidate := b.cfg.ValidateCredentialWeights(); errValidate != nil {
 		return nil, fmt.Errorf("cliproxy: validate credential weights: %w", errValidate)
 	}
+	if errValidate := b.cfg.Pricing.Validate(); errValidate != nil {
+		return nil, fmt.Errorf("cliproxy: validate pricing: %w", errValidate)
+	}
 	b.cfg.NormalizePluginsConfig()
 	proxyregistry.ConfigureForAuthDir(b.cfg.AuthDir)
 	if errResolvePluginsDir := b.cfg.ResolvePluginsDir(); errResolvePluginsDir != nil && b.cfg.Plugins.Enabled {

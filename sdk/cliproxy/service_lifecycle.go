@@ -49,6 +49,9 @@ func (s *Service) Run(ctx context.Context) error {
 		s.homeMu.Unlock()
 	}()
 
+	if errPricing := s.configurePricing(ctx, s.cfg); errPricing != nil {
+		return fmt.Errorf("configure pricing: %w", errPricing)
+	}
 	usage.StartDefault(ctx)
 	homeEnabled := s.cfg != nil && s.cfg.Home.Enabled
 	if homeEnabled {
@@ -116,7 +119,21 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	// handlers no longer depend on legacy clients; pass nil slice initially
-	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, s.serverOptions...)
+	serverOptions := append([]api.ServerOption{}, s.serverOptions...)
+	serverOptions = append(serverOptions, api.WithBillingUsageProvider(func(ctx context.Context) ([]usage.AccountTotal, error) {
+		s.pricingMu.Lock()
+		sink, _ := s.pricingSink.(*usage.SQLChargeSink)
+		totals := s.pricingTotals
+		s.pricingMu.Unlock()
+		if sink != nil {
+			return sink.Aggregate(ctx)
+		}
+		if totals != nil {
+			return totals.Snapshot(), nil
+		}
+		return usage.DefaultBillingTotals().Snapshot(), nil
+	}))
+	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, serverOptions...)
 	s.syncPluginRuntimeConfig(ctx)
 	if homeEnabled {
 		s.syncPluginModelRuntime(ctx)
@@ -288,6 +305,7 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		if s.coreManager != nil {
 			s.coreManager.StopAutoRefresh()
 		}
+		s.closePricing()
 		if s.watcher != nil {
 			if err := s.watcher.Stop(); err != nil {
 				log.Errorf("failed to stop file watcher: %v", err)

@@ -1172,10 +1172,19 @@ func (m *Manager) shouldRetryAfterErrorWithAttempted(ctx context.Context, opts c
 		return 0, false
 	}
 	status := statusCodeFromError(err)
+	if status == 0 && isRetryableConnectionLifecycleError(err) {
+		status = http.StatusServiceUnavailable
+	}
 	if status == http.StatusOK {
 		return 0, false
 	}
 	if isRequestInvalidError(err) || isRequestStopError(err) {
+		return 0, false
+	}
+	// Transport failures often have no HTTP status (connection reset,
+	// unexpected EOF, TLS/proxy failure). Treat those as retryable upstream
+	// failures so Claude can move to the next credential or retry round.
+	if status == 0 && !isRetryableConnectionLifecycleError(err) {
 		return 0, false
 	}
 	if m.HomeEnabled() {
@@ -1231,6 +1240,13 @@ func (m *Manager) shouldRetryAfterErrorWithAttempted(ctx context.Context, opts c
 		return *retryAfter, true
 	}
 	return 0, true
+}
+
+func isRetryableConnectionLifecycleError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	return isConnectionLifecycleError(err)
 }
 
 func (m *Manager) homeRetryAllowed(attempt int, retryLimit int) bool {

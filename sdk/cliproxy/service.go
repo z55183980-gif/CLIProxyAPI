@@ -5,6 +5,7 @@ package cliproxy
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executionregistry"
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
 	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginstore"
 )
@@ -94,6 +96,11 @@ type Service struct {
 
 	// pluginHost owns dynamic plugin lifecycle and runtime capability adapters.
 	pluginHost *pluginhost.Host
+
+	pricingMu     sync.Mutex
+	pricingDB     *sql.DB
+	pricingSink   usage.ChargeSink
+	pricingTotals *usage.BillingTotals
 
 	// shutdownOnce ensures shutdown is called only once.
 	shutdownOnce sync.Once
