@@ -335,6 +335,5 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 	if !strings.Contains(string(data), "cpa-proxy-panel") {
 		data = injectManagementProxyPanel(data)
 	}
-	data = injectManagementAuthProxyEditor(data)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 }
