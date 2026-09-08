@@ -151,6 +151,10 @@ func (s *Service) applyConfigRuntime(ctx context.Context, commit configCommit, s
 	if !s.applyManagerConfig(ctx, commit) {
 		return false
 	}
+	if errPricing := s.configurePricing(ctx, cfg); errPricing != nil {
+		log.WithError(errPricing).Warn("failed to apply pricing configuration")
+		return false
+	}
 	if errContext := ctx.Err(); errContext != nil {
 		return false
 	}

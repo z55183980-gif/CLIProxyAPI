@@ -68,6 +68,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.LogsMaxTotalSizeMB = 0
 	cfg.ErrorLogsMaxFiles = 10
 	cfg.UsageStatisticsEnabled = false
+	cfg.Pricing.RateMultiplier = 1
 	cfg.RedisUsageQueueRetentionSeconds = 60
 	cfg.DisableCooling = false
 	cfg.SaveCooldownStatus = false
@@ -86,6 +87,14 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 			return cfgOptional, nil
 		}
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+	if errValidate := cfg.Pricing.Validate(); errValidate != nil {
+		if optional {
+			cfgOptional := &Config{CredentialInFlight: DefaultCredentialInFlightConfig()}
+			cfgOptional.NormalizePluginsConfig()
+			return cfgOptional, nil
+		}
+		return nil, errValidate
 	}
 
 	cfg.CredentialConcurrency = cfg.CredentialConcurrency.WithDefaults()

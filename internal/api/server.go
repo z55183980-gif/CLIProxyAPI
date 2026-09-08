@@ -29,6 +29,7 @@ import (
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 	"gopkg.in/yaml.v3"
@@ -103,6 +104,7 @@ type Server struct {
 
 	exampleAPIKeySafeModeEnabled bool
 	exampleAPIKeySafeModeActive  atomic.Bool
+	billingUsageProvider         func(context.Context) ([]usage.AccountTotal, error)
 }
 
 // NewServer creates and initializes a new API server instance.
@@ -182,6 +184,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 		pluginHost:          optionState.pluginHost,
 
 		exampleAPIKeySafeModeEnabled: optionState.exampleAPIKeySafeMode,
+		billingUsageProvider:         optionState.billingUsageProvider,
 	}
 	s.wsAuthEnabled.Store(cfg.WebsocketAuth)
 	s.exampleAPIKeySafeModeActive.Store(s.exampleAPIKeySafeModeRequired(cfg))
