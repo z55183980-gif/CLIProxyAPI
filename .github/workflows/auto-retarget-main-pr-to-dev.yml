@@ -6,6 +6,7 @@ on:
       - opened
       - reopened
       - edited
+      - synchronize
     branches:
       - main
 
@@ -16,11 +17,13 @@ permissions:
 
 jobs:
   retarget:
-    if: github.actor != 'github-actions[bot]'
+    # Forks with only main do not use the upstream main/dev routing policy.
+    # Enable it explicitly with the repository variable AUTO_RETARGET_MAIN_TO_DEV=true.
+    if: vars.AUTO_RETARGET_MAIN_TO_DEV == 'true' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Retarget PR base to dev
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
