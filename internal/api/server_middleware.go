@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	codexlive "github.com/router-for-me/CLIProxyAPI/v7/internal/client/codex/live"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
@@ -199,35 +198,3 @@ func accessAuthMiddleware(manager *sdkaccess.Manager, realtimeError bool) gin.Ha
 	}
 }
 
-func realtimeAuthMiddleware(manager *sdkaccess.Manager, handler *codexlive.Handler) gin.HandlerFunc {
-	fallback := realtimeStandardAuthMiddleware(manager)
-	return func(c *gin.Context) {
-		authorization, matched, errAuthenticate := handler.AuthenticateClientSecret(c.Request)
-		if !matched {
-			fallback(c)
-			return
-		}
-		if errAuthenticate != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": gin.H{
-				"message": errAuthenticate.Error(),
-				"type":    "invalid_request_error",
-				"param":   nil,
-				"code":    "invalid_realtime_client_secret",
-			}})
-			return
-		}
-		principal := authorization.IssuerPrincipal
-		if principal == "" {
-			principal = authorization.Principal
-		}
-		provider := authorization.IssuerProvider
-		if provider == "" {
-			provider = "realtime-client-secret"
-		}
-		c.Set("userApiKey", principal)
-		c.Set("accessProvider", provider)
-		c.Set(codexlive.ClientSecretSessionContextKey, authorization.Session)
-		c.Set(codexlive.ClientSecretPrincipalContextKey, authorization.Principal)
-		c.Next()
-	}
-}

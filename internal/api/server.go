@@ -20,7 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 	managementHandlers "github.com/router-for-me/CLIProxyAPI/v7/internal/api/handlers/management"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/api/middleware"
-	codexlive "github.com/router-for-me/CLIProxyAPI/v7/internal/client/codex/live"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/managementasset"
@@ -52,7 +51,6 @@ type Server struct {
 
 	// handlers contains the API handlers for processing requests.
 	handlers         *handlers.BaseAPIHandler
-	codexLiveHandler *codexlive.Handler
 
 	// cfg holds the current server configuration.
 	cfg *config.Config
@@ -390,9 +388,6 @@ func (s *Server) Stop(ctx context.Context) error {
 
 	// Shutdown the HTTP server.
 	errShutdown := s.server.Shutdown(ctx)
-	if s.codexLiveHandler != nil {
-		s.codexLiveHandler.Close()
-	}
 	if errShutdown != nil {
 		return fmt.Errorf("failed to shutdown HTTP server: %v", errShutdown)
 	}
