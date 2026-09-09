@@ -11,6 +11,10 @@ import (
 // Pricing is disabled by default and is independent from usage statistics.
 type PricingConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
+	// InMemory keeps billing charges in process memory instead of requiring a
+	// PostgreSQL ledger. This is useful for local previews and development;
+	// charges are lost when the process exits.
+	InMemory bool `yaml:"in-memory,omitempty" json:"in-memory,omitempty"`
 	// DatabaseDSNEnv names an environment variable containing the PostgreSQL DSN.
 	// Keeping the DSN out of YAML prevents accidental exposure via management APIs.
 	DatabaseDSNEnv     string  `yaml:"database-dsn-env,omitempty" json:"database-dsn-env,omitempty"`
@@ -31,6 +35,9 @@ func (p PricingConfig) Validate() error {
 	}
 	if err := p.PricingTable.Validate(); err != nil {
 		return fmt.Errorf("pricing table: %w", err)
+	}
+	if p.InMemory {
+		return nil
 	}
 	return nil
 }

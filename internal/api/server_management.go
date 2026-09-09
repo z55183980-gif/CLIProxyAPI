@@ -182,13 +182,8 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/auth-files", s.mgmt.DeleteAuthFile)
 		mgmt.PATCH("/auth-files/status", s.mgmt.PatchAuthFileStatus)
 		mgmt.PATCH("/auth-files/fields", s.mgmt.PatchAuthFileFields)
-		mgmt.POST("/vertex/import", s.mgmt.ImportVertexCredential)
 
 		mgmt.GET("/anthropic-auth-url", s.mgmt.RequestAnthropicToken)
-		mgmt.GET("/codex-auth-url", s.mgmt.RequestCodexToken)
-		mgmt.GET("/antigravity-auth-url", s.mgmt.RequestAntigravityToken)
-		mgmt.GET("/kimi-auth-url", s.mgmt.RequestKimiToken)
-		mgmt.GET("/xai-auth-url", s.mgmt.RequestXAIToken)
 		mgmt.GET("/get-auth-status", s.mgmt.GetAuthStatus)
 		mgmt.DELETE("/oauth-session", s.mgmt.CancelAuthSession)
 	}
@@ -333,7 +328,7 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	if !strings.Contains(string(data), "cpa-proxy-panel") {
+	if !strings.Contains(string(data), "__cpaClaudeCards") {
 		data = injectManagementProxyPanel(data)
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", data)

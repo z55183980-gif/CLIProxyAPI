@@ -32,8 +32,9 @@ type disabledPricingPlugin struct{}
 func (disabledPricingPlugin) HandleUsage(context.Context, usage.Record) {}
 
 // configurePricing applies the optional pricing plugin for the supplied
-// configuration. A PostgreSQL DSN is read from the configured environment
-// variable; the DSN itself is never copied into Config or logs.
+// configuration. Durable mode uses PostgreSQL, while in-memory mode is
+// available for local previews and development when no database is present.
+// The DSN itself is never copied into Config or logs.
 func (s *Service) configurePricing(ctx context.Context, cfg *config.Config) error {
 	if s == nil || cfg == nil {
 		return nil
@@ -53,6 +54,25 @@ func (s *Service) configurePricing(ctx context.Context, cfg *config.Config) erro
 		s.pricingSink = nil
 		s.pricingTotals = nil
 		usage.RegisterNamedPlugin(pricingPluginName, disabledPricingPlugin{})
+		s.pricingMu.Unlock()
+		return nil
+	}
+	if cfg.Pricing.InMemory {
+		// Keep charges process-local; this mode intentionally has no durable
+		// history and is suitable for previews where PostgreSQL is unavailable.
+		sink := usage.NewMemoryChargeSink()
+		engine := usage.NewPriceEngine(cfg.Pricing.PricingTable)
+		totals := usage.DefaultBillingTotals()
+		plugin := &usage.PricingPlugin{Engine: engine, Sink: sink, Totals: totals, RateMultiplier: cfg.Pricing.RateMultiplier,
+			OnError: func(err error) { log.WithError(err).Error("pricing charge failed") }}
+		s.pricingMu.Lock()
+		if s.pricingDB != nil {
+			_ = s.pricingDB.Close()
+			s.pricingDB = nil
+		}
+		usage.RegisterNamedPlugin(pricingPluginName, plugin)
+		s.pricingSink = sink
+		s.pricingTotals = totals
 		s.pricingMu.Unlock()
 		return nil
 	}

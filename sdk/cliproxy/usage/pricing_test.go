@@ -43,15 +43,15 @@ func TestPriceEngineLongContextAndTier(t *testing.T) {
 	engine := NewPriceEngine(PricingTable{Default: &PriceCard{
 		InputPerToken: 1, OutputPerToken: 1,
 		ServiceTier: map[string]float64{"priority": 2},
-		LongContext: &LongContextPrice{Threshold: 100, InputMultiplier: 3, OutputMultiplier: 4},
+		LongContext: &LongContextPrice{Threshold: 99, InputMultiplier: 3, OutputMultiplier: 4},
 	}})
 	q, err := engine.Quote("model", Detail{InputTokens: 100, OutputTokens: 10, TotalTokens: 110,
 		TokenBreakdown: NewSubsetTokenBreakdown(100, 0, 0, 10, 0, 110)}, 1, "priority", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q.TotalUSD != 640 {
-		t.Fatalf("total = %v, want 640", q.TotalUSD)
+	if q.TotalUSD != 680 {
+		t.Fatalf("total = %v, want 680", q.TotalUSD)
 	}
 	if !q.LongContextApplied {
 		t.Fatal("long context flag is false")

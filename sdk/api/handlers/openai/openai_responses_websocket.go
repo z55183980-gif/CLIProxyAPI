@@ -533,8 +533,6 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 			continue
 		}
 
-		requestJSON = h.prepareCodexMultiAgentV2Tools(c, requestJSON)
-		requestJSON = h.prepareCodexOrphanDelegation(c, requestJSON)
 
 		if !useUpstreamWebsocketPassthrough && shouldHandleResponsesWebsocketPrewarmLocally(payload, lastRequest, false) {
 			if updated, errDelete := sjson.DeleteBytes(requestJSON, "generate"); errDelete == nil {
