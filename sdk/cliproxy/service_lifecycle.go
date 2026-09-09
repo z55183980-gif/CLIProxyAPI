@@ -131,7 +131,7 @@ func (s *Service) Run(ctx context.Context) error {
 		if totals != nil {
 			return totals.Snapshot(), nil
 		}
-		return usage.DefaultBillingTotals().Snapshot(), nil
+		return []usage.AccountTotal{{Account: "total"}}, nil
 	}))
 	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, serverOptions...)
 	s.syncPluginRuntimeConfig(ctx)
