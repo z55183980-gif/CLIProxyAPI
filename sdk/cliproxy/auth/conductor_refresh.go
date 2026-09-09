@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	internalconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/config"
@@ -343,7 +342,7 @@ func (m *Manager) markRefreshPending(id string, now time.Time) bool {
 }
 
 type authRefreshLock struct {
-	mu sync.Mutex
+	requestAuthPrepareLock
 }
 
 func authAccessToken(auth *Auth) string {
@@ -449,8 +448,10 @@ func (m *Manager) refreshAuthForRequest(ctx context.Context, id, failedAccessTok
 		lock = &authRefreshLock{}
 		m.refreshLocks.Store(id, lock)
 	}
-	lock.mu.Lock()
-	defer lock.mu.Unlock()
+	if err := lock.acquire(ctx); err != nil {
+		return nil, err
+	}
+	defer lock.release()
 
 	m.mu.RLock()
 	auth := m.auths[id]
@@ -459,6 +460,9 @@ func (m *Manager) refreshAuthForRequest(ctx context.Context, id, failedAccessTok
 		// Use the same effective provider key as request execution so OpenAI-compat
 		// auths registered under namespaced keys still resolve for refresh.
 		exec = m.executors[executorKeyFromAuth(auth)]
+		// MarkResult mutates managed auth state while requests are in flight.
+		// Keep the refresh snapshot independent before releasing the map lock.
+		auth = auth.Clone()
 	}
 	m.mu.RUnlock()
 	if auth == nil || exec == nil {

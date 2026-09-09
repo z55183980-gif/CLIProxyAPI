@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
@@ -24,8 +25,8 @@ type PricingConfig struct {
 }
 
 func (p PricingConfig) Validate() error {
-	if p.RateMultiplier < 0 {
-		return fmt.Errorf("pricing rate-multiplier must be non-negative")
+	if math.IsNaN(p.RateMultiplier) || math.IsInf(p.RateMultiplier, 0) || p.RateMultiplier < 0 {
+		return fmt.Errorf("pricing rate-multiplier must be finite and non-negative")
 	}
 	if !p.Enabled {
 		return nil

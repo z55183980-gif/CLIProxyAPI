@@ -128,3 +128,31 @@ func TestClaudeExecutorSharedCredentialMetadataMixedAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestClaudeSetupTokenFlagsConcurrentWithProfileWrites(t *testing.T) {
+	for _, key := range []string{"skip_account_profile", "is_setup_token", "setup_token"} {
+		t.Run(key, func(t *testing.T) {
+			auth := newSharedClaudeOAuthAuth("setup-flags-" + key)
+			claudeauth.StoreMetadataValue(&auth.Metadata, key, true)
+			var wg sync.WaitGroup
+			start := make(chan struct{})
+			for i := 0; i < 32; i++ {
+				wg.Add(1)
+				go func(writer bool) {
+					defer wg.Done()
+					<-start
+					for j := 0; j < 100; j++ {
+						if writer {
+							claudeauth.StoreMetadataString(&auth.Metadata, "account_uuid", "test-account")
+						} else if !isClaudeSetupToken(auth, "sk-ant-oat-race-probe") {
+							t.Error("setup-token flag lost during concurrent profile writes")
+							return
+						}
+					}
+				}(i%2 == 0)
+			}
+			close(start)
+			wg.Wait()
+		})
+	}
+}

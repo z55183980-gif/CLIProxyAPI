@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"sort"
 	"strings"
@@ -152,14 +153,39 @@ type TokenQuote struct {
 type PriceEngine struct{ table PricingTable }
 
 func NewPriceEngine(table PricingTable) *PriceEngine {
-	return &PriceEngine{table: table}
+	return &PriceEngine{table: clonePricingTable(table)}
 }
 
 func (e *PriceEngine) Table() PricingTable {
 	if e == nil {
 		return PricingTable{}
 	}
-	return e.table
+	return clonePricingTable(e.table)
+}
+
+func clonePriceCard(card PriceCard) PriceCard {
+	card.ServiceTier = maps.Clone(card.ServiceTier)
+	card.ReasoningMultiplier = maps.Clone(card.ReasoningMultiplier)
+	if card.LongContext != nil {
+		lc := *card.LongContext
+		card.LongContext = &lc
+	}
+	return card
+}
+
+func clonePricingTable(table PricingTable) PricingTable {
+	if table.Default != nil {
+		card := clonePriceCard(*table.Default)
+		table.Default = &card
+	}
+	if table.Rules != nil {
+		rules := make([]PriceRule, len(table.Rules))
+		for i, rule := range table.Rules {
+			rules[i] = PriceRule{Model: rule.Model, PriceCard: clonePriceCard(rule.PriceCard)}
+		}
+		table.Rules = rules
+	}
+	return table
 }
 
 // Quote calculates non-overlapping input/output/cache costs. Unknown models
@@ -188,8 +214,8 @@ func (e *PriceEngine) quote(model string, detail Detail, provider, executorType 
 	if b.Quality != TokenAccountingQualityComplete || b.UnclassifiedTokens != 0 {
 		return TokenQuote{}, fmt.Errorf("token usage is not completely classified: %s", b.Quality)
 	}
-	if rateMultiplier < 0 {
-		rateMultiplier = 0
+	if math.IsNaN(rateMultiplier) || math.IsInf(rateMultiplier, 0) || rateMultiplier < 0 {
+		return TokenQuote{}, errors.New("pricing rate multiplier must be finite and non-negative")
 	}
 	input, output, read, write := b.Input.UncachedTokens, b.Output.TotalTokens, b.Input.CacheReadTokens, b.Input.CacheWriteTokens
 	inputMul, outputMul := 1.0, 1.0
@@ -210,7 +236,11 @@ func (e *PriceEngine) quote(model string, detail Detail, provider, executorType 
 	readCost := float64(read) * card.CacheReadPerToken * inputMul * tierMul * rateMultiplier * reasonMul
 	writeCost := float64(write) * card.CacheWritePerToken * inputMul * tierMul * rateMultiplier * reasonMul
 	total := inputCost + outputCost + readCost + writeCost
-	return TokenQuote{Model: model, PriceSource: source, PriceRevision: e.table.Revision, InputTokens: input, OutputTokens: output, CacheReadTokens: read, CacheWriteTokens: write, InputCost: inputCost, OutputCost: outputCost, CacheReadCost: readCost, CacheWriteCost: writeCost, TotalUSD: total, TotalMicros: roundMicros(total), RateMultiplier: rateMultiplier, ServiceTier: serviceTier, ReasoningEffort: reasoningEffort, LongContextApplied: inputMul != 1 || outputMul != 1, Quality: b.Quality}, nil
+	micros, err := roundMicros(total)
+	if err != nil {
+		return TokenQuote{}, err
+	}
+	return TokenQuote{Model: model, PriceSource: source, PriceRevision: e.table.Revision, InputTokens: input, OutputTokens: output, CacheReadTokens: read, CacheWriteTokens: write, InputCost: inputCost, OutputCost: outputCost, CacheReadCost: readCost, CacheWriteCost: writeCost, TotalUSD: total, TotalMicros: micros, RateMultiplier: rateMultiplier, ServiceTier: serviceTier, ReasoningEffort: reasoningEffort, LongContextApplied: inputMul != 1 || outputMul != 1, Quality: b.Quality}, nil
 }
 
 func positiveOrOne(v float64) float64 {
@@ -219,11 +249,14 @@ func positiveOrOne(v float64) float64 {
 	}
 	return v
 }
-func roundMicros(usd float64) int64 {
-	if usd <= 0 {
-		return 0
+func roundMicros(usd float64) (int64, error) {
+	micros := math.Round(usd * 1_000_000)
+	// float64(math.MaxInt64) rounds to 2^63, already outside int64. Reject
+	// before conversion rather than writing a negative amount to the ledger.
+	if math.IsNaN(micros) || math.IsInf(micros, 0) || usd < 0 || micros >= float64(math.MaxInt64) {
+		return 0, errors.New("pricing amount is not finite or exceeds the ledger range")
 	}
-	return int64(math.Round(usd * 1_000_000))
+	return int64(micros), nil
 }
 
 // Charge is the boundary between pricing and a persistent billing ledger.
@@ -256,33 +289,52 @@ type MemoryChargeSink struct {
 func NewMemoryChargeSink() *MemoryChargeSink {
 	return &MemoryChargeSink{charges: make(map[string]Charge)}
 }
-func (s *MemoryChargeSink) Apply(_ context.Context, c Charge) error {
+func (s *MemoryChargeSink) Apply(ctx context.Context, c Charge) error {
 	if s == nil {
 		return errors.New("charge sink is nil")
 	}
-	if strings.TrimSpace(c.EventID) == "" {
+	c.EventID = strings.TrimSpace(c.EventID)
+	if c.EventID == "" {
 		return errors.New("billing event id is empty")
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.charges == nil {
+		s.charges = make(map[string]Charge)
+	}
 	if old, ok := s.charges[c.EventID]; ok {
 		if old.Fingerprint != c.Fingerprint {
 			return ErrChargeConflict
 		}
 		return nil
 	}
-	s.charges[c.EventID] = c
+	s.charges[c.EventID] = cloneCharge(c)
 	return nil
 }
 func (s *MemoryChargeSink) Charges() []Charge {
+	if s == nil {
+		return nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]Charge, 0, len(s.charges))
 	for _, c := range s.charges {
-		out = append(out, c)
+		out = append(out, cloneCharge(c))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].EventID < out[j].EventID })
 	return out
+}
+
+func cloneCharge(c Charge) Charge {
+	c.Record.ResponseHeaders = c.Record.ResponseHeaders.Clone()
+	if c.Record.Generate != nil {
+		generate := *c.Record.Generate
+		c.Record.Generate = &generate
+	}
+	return c
 }
 
 // PricingPlugin converts existing usage records into charges without changing
@@ -297,11 +349,18 @@ type PricingPlugin struct {
 }
 
 func (p *PricingPlugin) HandleUsage(ctx context.Context, record Record) {
-	if p == nil || p.Engine == nil || p.Sink == nil || record.Failed {
+	if p == nil || p.Engine == nil || p.Sink == nil || record.Failed || !IsClaudeProvider(record.Provider) {
 		return
 	}
+	// Usage records are dispatched asynchronously after HTTP request contexts
+	// are commonly canceled. Use a bounded independent context for ledger I/O.
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	chargeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 	rate := p.RateMultiplier
-	if rate <= 0 {
+	if rate == 0 {
 		rate = 1
 	}
 	quote, err := p.Engine.quote(record.Model, record.Detail, record.Provider, record.ExecutorType, rate, record.ServiceTier, record.ReasoningEffort)
@@ -320,7 +379,7 @@ func (p *PricingPlugin) HandleUsage(ctx context.Context, record Record) {
 	}
 	eventID := StableBillingEventID(requestID, record)
 	charge := Charge{EventID: eventID, RequestID: requestID, APIKey: record.APIKey, Fingerprint: recordFingerprint(record), Record: record, Quote: quote, CreatedAt: time.Now().UTC()}
-	if err := p.Sink.Apply(ctx, charge); err != nil {
+	if err := p.Sink.Apply(chargeCtx, charge); err != nil {
 		if p.OnError != nil {
 			p.OnError(err)
 		}
@@ -329,6 +388,12 @@ func (p *PricingPlugin) HandleUsage(ctx context.Context, record Record) {
 	if p.Totals != nil {
 		p.Totals.Add(charge)
 	}
+}
+
+// IsClaudeProvider accepts the explicit upstream identifiers used for Claude billing.
+func IsClaudeProvider(provider string) bool {
+	p := strings.ToLower(strings.TrimSpace(provider))
+	return p == "claude" || p == "anthropic"
 }
 
 func StableBillingEventID(requestID string, record Record) string {
@@ -346,6 +411,9 @@ func StableBillingEventID(requestID string, record Record) string {
 }
 func recordFingerprint(r Record) string {
 	h := sha256.New()
+	// Preserve the established fingerprint format for ledger replay
+	// compatibility. New breakdown fields are intentionally not included until
+	// a versioned migration exists for existing rows.
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d", r.Model, r.APIKey, r.Provider, r.Detail.InputTokens, r.Detail.OutputTokens, r.Detail.ReasoningTokens, r.Detail.CacheReadTokens, r.Detail.CacheCreationTokens, r.Detail.TotalTokens, r.Detail.TokenBreakdown.TotalTokens)
 	return hex.EncodeToString(h.Sum(nil))
 }

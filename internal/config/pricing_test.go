@@ -1,10 +1,32 @@
 package config
 
 import (
+	"math"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 )
+
+func TestPricingConfigRejectsNonFiniteMultipliers(t *testing.T) {
+	for _, rate := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		for _, enabled := range []bool{false, true} {
+			cfg := PricingConfig{Enabled: enabled, RateMultiplier: rate, PricingTable: usage.PricingTable{Revision: "test", Default: &usage.PriceCard{InputPerToken: 1}}}
+			if err := cfg.Validate(); err == nil {
+				t.Fatalf("accepted rate %v when enabled=%v", rate, enabled)
+			}
+		}
+	}
+}
+
+func TestPricingConfigRejectsNonFiniteYAMLMultipliers(t *testing.T) {
+	for _, rate := range []string{".nan", ".inf", "-.inf"} {
+		t.Run(rate, func(t *testing.T) {
+			if _, err := ParseConfigBytes([]byte("pricing:\n  rate-multiplier: " + rate + "\n")); err == nil {
+				t.Fatalf("accepted YAML rate-multiplier %s", rate)
+			}
+		})
+	}
+}
 
 func TestPricingConfigValidationDisabledByDefault(t *testing.T) {
 	cfg, err := ParseConfigBytes([]byte("port: 8317\n"))

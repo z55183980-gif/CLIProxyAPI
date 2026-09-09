@@ -43,9 +43,14 @@ func (s *SQLChargeSink) Aggregate(ctx context.Context) ([]AccountTotal, error) {
 	if s == nil || s.DB == nil {
 		return nil, errors.New("sql charge sink: database is nil")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	query := fmt.Sprintf(`SELECT COALESCE(NULLIF(usage_record->>'AuthID',''), NULLIF(usage_record->>'auth_id',''), NULLIF(api_key_sha256,''), 'unknown') AS account,
 COUNT(*)::BIGINT, COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(amount_micros),0), COALESCE(SUM(total_usd),0)
-FROM %s GROUP BY 1 ORDER BY 1`, s.tableName())
+FROM %s
+WHERE LOWER(TRIM(provider)) IN ('claude', 'anthropic')
+GROUP BY 1 ORDER BY 1`, s.tableName())
 	rows, err := s.DB.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("sql charge sink: aggregate: %w", err)
@@ -105,6 +110,9 @@ func (s *SQLChargeSink) EnsureSchema(ctx context.Context) error {
 	if s == nil || s.DB == nil {
 		return errors.New("sql charge sink: database is nil")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	table := s.tableName()
 	create := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 event_id TEXT PRIMARY KEY,
@@ -145,6 +153,9 @@ func (s *SQLChargeSink) Apply(ctx context.Context, charge Charge) (err error) {
 	if s == nil || s.DB == nil {
 		return errors.New("sql charge sink: database is nil")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	charge.EventID = strings.TrimSpace(charge.EventID)
 	if charge.EventID == "" {
 		return errors.New("billing event id is empty")
@@ -169,11 +180,10 @@ func (s *SQLChargeSink) Apply(ctx context.Context, charge Charge) (err error) {
 	if beginErr != nil {
 		return fmt.Errorf("sql charge sink: begin transaction: %w", beginErr)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	// Roll back even if a custom hook panics and the usage dispatcher recovers.
+	// After Commit this is a harmless ErrTxDone; before Commit it releases the
+	// transaction's connection and any row locks on every exit path.
+	defer tx.Rollback()
 	table := s.tableName()
 	insert := fmt.Sprintf(`INSERT INTO %s
 (event_id,request_id,fingerprint,api_key_sha256,provider,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,total_tokens,amount_micros,total_usd,price_revision,price_source,quote,usage_record,created_at)

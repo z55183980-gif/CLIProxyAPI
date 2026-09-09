@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/api"
@@ -19,6 +20,34 @@ import (
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
 	log "github.com/sirupsen/logrus"
 )
+
+// The dispatcher and runtime plugin hooks are process-wide. Until those APIs
+// support injection, only one running Service can safely own their lifecycle.
+var serviceUsageOwner struct {
+	sync.Mutex
+	service *Service
+}
+
+func (s *Service) claimUsageLifecycle() error {
+	serviceUsageOwner.Lock()
+	defer serviceUsageOwner.Unlock()
+	if s.shutdownStarted {
+		return errors.New("cliproxy: service has already been shut down")
+	}
+	if serviceUsageOwner.service != nil {
+		return errors.New("cliproxy: usage runtime is already owned by a running service")
+	}
+	serviceUsageOwner.service = s
+	return nil
+}
+
+func (s *Service) releaseUsageLifecycle() {
+	serviceUsageOwner.Lock()
+	if serviceUsageOwner.service == s {
+		serviceUsageOwner.service = nil
+	}
+	serviceUsageOwner.Unlock()
+}
 
 // Run starts the service and blocks until the context is cancelled or the server stops.
 // It initializes all components including authentication, file watching, HTTP server,
@@ -36,10 +65,21 @@ func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	s.startupMu.Lock()
+	if err := s.claimUsageLifecycle(); err != nil {
+		s.startupMu.Unlock()
+		return err
+	}
+	starting := true
 	ctx, runCancel := context.WithCancel(ctx)
 	s.homeMu.Lock()
 	s.runCancel = runCancel
 	s.homeMu.Unlock()
+	serviceUsageOwner.Lock()
+	if s.shutdownStarted {
+		runCancel()
+	}
+	serviceUsageOwner.Unlock()
 	defer func() {
 		runCancel()
 		s.homeMu.Lock()
@@ -49,23 +89,33 @@ func (s *Service) Run(ctx context.Context) error {
 		s.homeMu.Unlock()
 	}()
 
+	defer func() {
+		if starting {
+			s.startupMu.Unlock()
+		}
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			log.Errorf("service shutdown returned error: %v", err)
+		}
+	}()
+	if s.cfg == nil {
+		return errors.New("cliproxy: service configuration is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if errPricing := s.configurePricing(ctx, s.cfg); errPricing != nil {
 		return fmt.Errorf("configure pricing: %w", errPricing)
 	}
-	usage.StartDefault(ctx)
+	// Keep accepting final usage records until HTTP handlers have finished.
+	// Shutdown explicitly drains the dispatcher before closing its sinks.
+	usage.StartDefault(context.WithoutCancel(ctx))
 	homeEnabled := s.cfg != nil && s.cfg.Home.Enabled
 	if homeEnabled {
 		forceHomeRuntimeConfig(s.cfg)
 		redisqueue.SetUsageStatisticsEnabled(true)
 	}
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
-	defer func() {
-		if err := s.Shutdown(shutdownCtx); err != nil {
-			log.Errorf("service shutdown returned error: %v", err)
-		}
-	}()
 
 	if !homeEnabled {
 		if errEnsureAuthDir := s.ensureAuthDir(); errEnsureAuthDir != nil {
@@ -94,12 +144,18 @@ func (s *Service) Run(ctx context.Context) error {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return err
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if tokenResult == nil {
 			tokenResult = &TokenClientResult{}
 		}
 
 		apiKeyResult, err := s.apiKeyProvider.Load(ctx, s.cfg)
 		if err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if apiKeyResult == nil {
@@ -168,7 +224,16 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	if s.hooks.OnBeforeStart != nil {
-		s.hooks.OnBeforeStart(s.cfg)
+		// Hooks may call Shutdown themselves. No initialization runs while
+		// the callback owns control; recheck cancellation before continuing.
+		func() {
+			s.startupMu.Unlock()
+			defer s.startupMu.Lock()
+			s.hooks.OnBeforeStart(s.cfg)
+		}()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	s.serverErr = make(chan error, 1)
@@ -186,7 +251,14 @@ func (s *Service) Run(ctx context.Context) error {
 	s.applyPprofConfig(s.cfg)
 
 	if s.hooks.OnAfterStart != nil {
-		s.hooks.OnAfterStart(s)
+		func() {
+			s.startupMu.Unlock()
+			defer s.startupMu.Lock()
+			s.hooks.OnAfterStart(s)
+		}()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	if !homeEnabled {
@@ -223,6 +295,8 @@ func (s *Service) Run(ctx context.Context) error {
 		log.Infof("core auth auto-refresh started (interval=%s)", interval)
 	}
 
+	starting = false
+	s.startupMu.Unlock()
 	select {
 	case <-ctx.Done():
 		log.Debug("service context cancelled, shutting down...")
@@ -245,12 +319,34 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
-	var shutdownErr error
-	s.shutdownOnce.Do(func() {
-		if ctx == nil {
-			ctx = context.Background()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	serviceUsageOwner.Lock()
+	s.shutdownStarted = true
+	serviceUsageOwner.Unlock()
+	s.homeMu.Lock()
+	runCancel := s.runCancel
+	s.homeMu.Unlock()
+	if runCancel != nil {
+		runCancel()
+	}
+	// Wait without consuming shutdownOnce: if startup outlives this deadline,
+	// Run's deferred shutdown must still be able to clean up when it exits.
+	for !s.startupMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Millisecond):
 		}
-
+	}
+	defer s.startupMu.Unlock()
+	s.shutdownOnce.Do(func() {
+		var shutdownErr error
+		defer func() { s.shutdownErr = shutdownErr }()
+		serviceUsageOwner.Lock()
+		ownsUsage := serviceUsageOwner.service == s
+		serviceUsageOwner.Unlock()
 		s.homeLifecycleMu.Lock()
 		if supervisor := s.homeSupervisor; supervisor != nil {
 			s.homeConfigCommitMu.Lock()
@@ -305,7 +401,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		if s.coreManager != nil {
 			s.coreManager.StopAutoRefresh()
 		}
-		s.closePricing()
 		if s.watcher != nil {
 			if err := s.watcher.Stop(); err != nil {
 				log.Errorf("failed to stop file watcher: %v", err)
@@ -334,10 +429,12 @@ func (s *Service) Shutdown(ctx context.Context) error {
 
 		// no legacy clients to persist
 
+		httpStopped := true
 		if s.server != nil {
 			shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 			if err := s.server.Stop(shutdownCtx); err != nil {
+				httpStopped = false
 				log.Errorf("error stopping API server: %v", err)
 				if shutdownErr == nil {
 					shutdownErr = err
@@ -345,27 +442,66 @@ func (s *Service) Shutdown(ctx context.Context) error {
 			}
 		}
 
-		if s.pluginHost != nil {
-			sdktranslator.SetPluginHooks(nil)
-			sdkAuth.RegisterPluginAuthParser(nil)
-			if s.watcher != nil {
-				s.watcher.SetPluginAuthParser(nil)
+		if !ownsUsage {
+			s.closePricing()
+			if s.pluginHost != nil {
+				s.pluginHost.ShutdownAllContext(ctx)
 			}
-			s.pluginHost.ApplyConfig(ctx, &config.Config{})
-			s.pluginHost.RegisterModels(ctx, registry.GetGlobalRegistry())
-			s.registerAvailableExecutors(ctx, executorRegistrationOptions{
-				includePlugins: true,
-			})
-			s.pluginHost.RegisterFrontendAuthProviders()
-			s.pluginHost.ShutdownAllContext(ctx)
-			if s.accessManager != nil {
-				s.accessManager.SetProviders(sdkaccess.RegisteredProviders())
-			}
+			return
 		}
-
-		usage.StopDefault()
+		if !httpStopped {
+			// net/http Shutdown can time out while handlers are still running.
+			// Retain their usage sinks until those handlers and queued records finish.
+			go func() {
+				if err := s.server.Stop(context.Background()); err != nil {
+					log.Errorf("error waiting for API server shutdown: %v", err)
+					return
+				}
+				_ = s.shutdownUsageAndPlugins(context.Background())
+			}()
+			return
+		}
+		if err := s.shutdownUsageAndPlugins(ctx); err != nil && shutdownErr == nil {
+			shutdownErr = err
+		}
 	})
-	return shutdownErr
+	return s.shutdownErr
+}
+
+func (s *Service) shutdownUsageAndPlugins(ctx context.Context) error {
+	if err := usage.ShutdownDefault(ctx); err != nil {
+		// A caller's deadline limits how long Shutdown waits, not the lifetime
+		// of already accepted billing records or their plugin resources.
+		go func() {
+			_ = usage.ShutdownDefault(context.Background())
+			s.closeUsagePlugins(context.Background())
+		}()
+		return fmt.Errorf("drain usage records: %w", err)
+	}
+	s.closeUsagePlugins(ctx)
+	return nil
+}
+
+func (s *Service) closeUsagePlugins(ctx context.Context) {
+	defer s.releaseUsageLifecycle()
+	s.closePricing()
+	if s.pluginHost != nil {
+		sdktranslator.SetPluginHooks(nil)
+		sdkAuth.RegisterPluginAuthParser(nil)
+		if s.watcher != nil {
+			s.watcher.SetPluginAuthParser(nil)
+		}
+		s.pluginHost.ApplyConfig(ctx, &config.Config{})
+		s.pluginHost.RegisterModels(ctx, registry.GetGlobalRegistry())
+		s.registerAvailableExecutors(ctx, executorRegistrationOptions{
+			includePlugins: true,
+		})
+		s.pluginHost.RegisterFrontendAuthProviders()
+		s.pluginHost.ShutdownAllContext(ctx)
+		if s.accessManager != nil {
+			s.accessManager.SetProviders(sdkaccess.RegisteredProviders())
+		}
+	}
 }
 
 func (s *Service) ensureAuthDir() error {

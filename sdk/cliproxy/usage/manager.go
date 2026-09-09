@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -248,16 +249,27 @@ type queueItem struct {
 	record Record
 }
 
+// ErrManagerStopped indicates that a record was not accepted because the
+// manager has stopped or is draining accepted records.
+var ErrManagerStopped = errors.New("usage manager is stopped")
+
+// managerRun owns one dispatcher generation. Cancellation of an old Start
+// context must never close a newly started dispatcher.
+type managerRun struct {
+	queue   []queueItem
+	head    int
+	size    int
+	closing bool
+	changed chan struct{}
+	done    chan struct{}
+}
+
 // Manager maintains a queue of usage records and delivers them to registered plugins.
 type Manager struct {
-	once     sync.Once
-	stopOnce sync.Once
-	cancel   context.CancelFunc
-
-	mu     sync.Mutex
-	cond   *sync.Cond
-	queue  []queueItem
-	closed bool
+	mu          sync.Mutex
+	running     *managerRun
+	initialized bool
+	capacity    int
 
 	pluginsMu sync.RWMutex
 	plugins   []Plugin
@@ -266,40 +278,101 @@ type Manager struct {
 
 // NewManager constructs a manager with a buffered queue.
 func NewManager(buffer int) *Manager {
-	m := &Manager{}
-	m.cond = sync.NewCond(&m.mu)
-	return m
+	if buffer <= 0 {
+		buffer = 512
+	}
+	return &Manager{capacity: buffer}
 }
 
 // Start launches the background dispatcher. Calling Start multiple times is safe.
+// A stopped manager may be restarted after Shutdown has finished draining it.
+// Start is a no-op while the current dispatcher is still running or draining.
 func (m *Manager) Start(ctx context.Context) {
 	if m == nil {
 		return
 	}
-	m.once.Do(func() {
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		var workerCtx context.Context
-		workerCtx, m.cancel = context.WithCancel(ctx)
-		go m.run(workerCtx)
-	})
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.running == nil {
+		m.startLocked(ctx)
+	}
 }
 
-// Stop stops the dispatcher and drains the queue.
+func (m *Manager) startLocked(ctx context.Context) {
+	if m.capacity <= 0 {
+		m.capacity = 512
+	}
+	run := &managerRun{
+		queue:   make([]queueItem, m.capacity),
+		changed: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+	m.running = run
+	m.initialized = true
+	go m.run(run)
+	if ctx != nil && ctx.Done() != nil {
+		go func() {
+			select {
+			case <-ctx.Done():
+				m.mu.Lock()
+				if m.running == run {
+					m.stopLocked()
+				}
+				m.mu.Unlock()
+			case <-run.done:
+			}
+		}()
+	}
+}
+
+// Stop rejects new records and starts draining accepted records. It does not
+// wait for plugins to finish; use Shutdown before closing plugin resources.
 func (m *Manager) Stop() {
 	if m == nil {
 		return
 	}
-	m.stopOnce.Do(func() {
-		if m.cancel != nil {
-			m.cancel()
-		}
-		m.mu.Lock()
-		m.closed = true
-		m.mu.Unlock()
-		m.cond.Broadcast()
-	})
+	m.mu.Lock()
+	m.stopLocked()
+	m.mu.Unlock()
+}
+
+func (m *Manager) stopLocked() *managerRun {
+	m.initialized = true
+	run := m.running
+	if run != nil && !run.closing {
+		run.closing = true
+		notifyRunLocked(run)
+	}
+	return run
+}
+
+// Shutdown rejects new records and waits until all accepted records have been
+// delivered. The context limits waiting only: cancellation does not discard
+// queued records or cancel plugin work. Call Shutdown again to await completion.
+func (m *Manager) Shutdown(ctx context.Context) error {
+	if m == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.mu.Lock()
+	run := m.stopLocked()
+	m.mu.Unlock()
+	if run == nil {
+		return nil
+	}
+	select {
+	case <-run.done:
+		return nil
+	default:
+	}
+	select {
+	case <-run.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Register appends a plugin to the delivery list.
@@ -339,33 +412,86 @@ func (m *Manager) RegisterNamed(name string, plugin Plugin) {
 // Publish enqueues a usage record for processing. If no plugin is registered
 // the record will be discarded downstream.
 func (m *Manager) Publish(ctx context.Context, record Record) {
-	if m == nil {
-		return
+	if err := m.PublishContext(ctx, record); err != nil {
+		log.Warnf("usage: record was not queued: %v", err)
 	}
-	// ensure worker is running even if Start was not called explicitly
-	m.Start(context.Background())
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
-		return
-	}
-	m.queue = append(m.queue, queueItem{ctx: ctx, record: record})
-	m.mu.Unlock()
-	m.cond.Signal()
 }
 
-func (m *Manager) run(ctx context.Context) {
+// PublishContext enqueues a record, waiting for capacity when the bounded queue
+// is full. Cancellation only aborts that wait; a record with an available slot
+// is accepted even if the request has already ended. Accepted records retain
+// context values but are delivered independently of request cancellation.
+func (m *Manager) PublishContext(ctx context.Context, record Record) error {
+	if m == nil {
+		return ErrManagerStopped
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.mu.Lock()
+	if !m.initialized {
+		m.startLocked(context.Background())
+	}
+	run := m.running
+	for {
+		if run == nil || run.closing || m.running != run {
+			m.mu.Unlock()
+			return ErrManagerStopped
+		}
+		if run.size < len(run.queue) {
+			tail := (run.head + run.size) % len(run.queue)
+			run.queue[tail] = queueItem{ctx: context.WithoutCancel(ctx), record: cloneQueuedRecord(record)}
+			run.size++
+			notifyRunLocked(run)
+			m.mu.Unlock()
+			return nil
+		}
+		changed := run.changed
+		m.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+		m.mu.Lock()
+	}
+}
+
+func cloneQueuedRecord(record Record) Record {
+	if record.Generate != nil {
+		record.Generate = GenerateFlag(*record.Generate)
+	}
+	record.ResponseHeaders = record.ResponseHeaders.Clone()
+	return record
+}
+
+func notifyRunLocked(run *managerRun) {
+	close(run.changed)
+	run.changed = make(chan struct{})
+}
+
+func (m *Manager) run(run *managerRun) {
 	for {
 		m.mu.Lock()
-		for !m.closed && len(m.queue) == 0 {
-			m.cond.Wait()
-		}
-		if len(m.queue) == 0 && m.closed {
+		if run.size == 0 {
+			if run.closing {
+				if m.running == run {
+					m.running = nil
+				}
+				close(run.done)
+				m.mu.Unlock()
+				return
+			}
+			changed := run.changed
 			m.mu.Unlock()
-			return
+			<-changed
+			continue
 		}
-		item := m.queue[0]
-		m.queue = m.queue[1:]
+		item := run.queue[run.head]
+		run.queue[run.head] = queueItem{}
+		run.head = (run.head + 1) % len(run.queue)
+		run.size--
+		notifyRunLocked(run)
 		m.mu.Unlock()
 		m.dispatch(item)
 	}
@@ -383,7 +509,7 @@ func (m *Manager) dispatch(item queueItem) {
 		if plugin == nil {
 			continue
 		}
-		safeInvoke(plugin, item.ctx, item.record)
+		safeInvoke(plugin, item.ctx, cloneQueuedRecord(item.record))
 	}
 }
 
@@ -415,3 +541,6 @@ func StartDefault(ctx context.Context) { DefaultManager().Start(ctx) }
 
 // StopDefault stops the default manager's dispatcher.
 func StopDefault() { DefaultManager().Stop() }
+
+// ShutdownDefault waits for accepted records before plugin resources are closed.
+func ShutdownDefault(ctx context.Context) error { return DefaultManager().Shutdown(ctx) }

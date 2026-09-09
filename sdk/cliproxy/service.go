@@ -101,9 +101,14 @@ type Service struct {
 	pricingDB     *sql.DB
 	pricingSink   usage.ChargeSink
 	pricingTotals *usage.BillingTotals
+	pricingPlugin *usage.PricingPlugin
 
 	// shutdownOnce ensures shutdown is called only once.
 	shutdownOnce sync.Once
+	shutdownErr  error
+	startupMu    sync.Mutex
+	// Protected by serviceUsageOwner; a Service cannot be reused after shutdown.
+	shutdownStarted bool
 
 	// wsGateway manages websocket Gemini providers.
 	wsGateway *wsrelay.Manager

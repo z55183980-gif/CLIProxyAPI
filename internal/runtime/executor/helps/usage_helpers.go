@@ -369,8 +369,14 @@ func (r *UsageReporter) EnsurePublished(ctx context.Context) {
 }
 
 func (r *UsageReporter) publishRecord(ctx context.Context, record usage.Record) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	record.ResponseHeaders = internallogging.GetResponseHeaders(ctx)
-	usage.PublishRecord(ctx, record)
+	// Final usage accounting must survive HTTP request cancellation. Preserve
+	// context values (request ID, response metadata) while detaching Done/Err so
+	// the bounded usage queue can apply backpressure and accept the record.
+	usage.PublishRecord(context.WithoutCancel(ctx), record)
 }
 
 func (r *UsageReporter) buildRecord(detail usage.Detail, failed bool, failures ...usage.Failure) usage.Record {

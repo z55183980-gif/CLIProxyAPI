@@ -13,14 +13,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/client"
 	gitindex "github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
@@ -150,7 +153,7 @@ func (s *GitTokenStore) ensureRepositoryLocked() (errResult error) {
 		if s.branch != "" {
 			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(s.branch)
 		}
-		if cloned, errClone := git.PlainClone(repoDir, cloneOpts); errClone != nil {
+		if cloned, errClone := cloneGitRepository(repoDir, cloneOpts); errClone != nil {
 			if errors.Is(errClone, transport.ErrEmptyRemoteRepository) {
 				_ = os.RemoveAll(gitDir)
 				repo, errInit := git.PlainInit(repoDir, false)
@@ -811,6 +814,48 @@ func (s *GitTokenStore) repoDirSnapshot() string {
 	return s.repoDir
 }
 
+// cloneGitRepository anchors filesystem operations at the destination instead
+// of using PlainClone's volume-root directory check. On Windows, os.Root cannot
+// traverse some shared temporary-directory ancestors even when the caller can
+// access the destination directly.
+func cloneGitRepository(repoDir string, opts *git.CloneOptions) (*git.Repository, error) {
+	entries, err := os.ReadDir(repoDir)
+	preexisting := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if len(entries) != 0 {
+		return nil, fmt.Errorf("%w %s", git.ErrTargetDirNotEmpty, repoDir)
+	}
+	if err := os.MkdirAll(repoDir, 0o700); err != nil {
+		return nil, err
+	}
+
+	worktree := osfs.New(repoDir, osfs.WithBoundOS())
+	dot, err := worktree.Chroot(".git")
+	if err != nil {
+		return nil, err
+	}
+	storage := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	repo, err := git.Clone(storage, worktree, opts)
+	if err == nil {
+		return repo, nil
+	}
+	// Close packfiles before removing the partial clone so Windows does not
+	// keep those files locked and prevent a retry or empty-repository setup.
+	if errClose := storage.Close(); errClose != nil {
+		err = errors.Join(err, fmt.Errorf("close failed clone: %w", errClose))
+	}
+	cleanupPath := repoDir
+	if preexisting {
+		cleanupPath = filepath.Join(repoDir, ".git")
+	}
+	if errCleanup := os.RemoveAll(cleanupPath); errCleanup != nil {
+		err = errors.Join(err, fmt.Errorf("remove failed clone: %w", errCleanup))
+	}
+	return nil, err
+}
+
 func disableGitCommitSigning(repoDir string) (errResult error) {
 	repo, errOpen := git.PlainOpen(repoDir)
 	if errOpen != nil {
@@ -1228,7 +1273,7 @@ func (s *GitTokenStore) recoverRepositoryLocked(repoDir string, authMethod []cli
 	if s.branch != "" {
 		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(s.branch)
 	}
-	clonedRepo, errClone := git.PlainClone(cloneDir, cloneOpts)
+	clonedRepo, errClone := cloneGitRepository(cloneDir, cloneOpts)
 	if errClone != nil {
 		if baselineRepo != nil {
 			if errClose := closeRepository(baselineRepo); errClose != nil {
