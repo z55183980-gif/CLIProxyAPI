@@ -89,7 +89,6 @@ func injectManagementProxyPanel(data []byte) []byte {
 	script = append(script, managementBillingPanelScript...)
 	script = append(script, []byte("</script>")...)
 	script = append(script, []byte("<script>")...)
-	script = append(script, managementProxyNavigationScript...)
 	script = append(script, []byte("</script>")...)
 	script = append(script, []byte("<script>")...)
 	script = append(script, managementProxyBatchScript...)

@@ -328,8 +328,5 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	if !strings.Contains(string(data), "__cpaClaudeCards") {
-		data = injectManagementProxyPanel(data)
-	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 }
