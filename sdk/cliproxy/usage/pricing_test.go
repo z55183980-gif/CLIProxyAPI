@@ -74,3 +74,13 @@ func TestMemoryChargeSinkIsIdempotentAndDetectsConflict(t *testing.T) {
 		t.Fatalf("charges = %d", len(sink.Charges()))
 	}
 }
+
+func TestPricingEngineRejectsUnknownModelWithoutDefault(t *testing.T) {
+	engine := NewPriceEngine(PricingTable{Revision: "test", Rules: []PriceRule{{
+		Model: "claude-sonnet-*", PriceCard: PriceCard{InputPerToken: 1},
+	}}})
+	_, err := engine.Quote("claude-unknown-9", Detail{TokenBreakdown: NewSubsetTokenBreakdown(1, 0, 0, 0, 0, 1)}, 1, "", "")
+	if err == nil {
+		t.Fatal("Quote unexpectedly succeeded for an unpriced model")
+	}
+}
