@@ -132,14 +132,49 @@ pricing:
   enabled: false
   database-dsn-env: CPA_PRICING_DATABASE_DSN
   database-table: billing_ledger
-  revision: "example-2026-09"
+  revision: "anthropic-2026-09"
   rate-multiplier: 1
   default:
     input-per-token: 0
     output-per-token: 0
     cache-read-per-token: 0
     cache-write-per-token: 0
-  rules: []
+  rules:
+    - model: "claude-fable-5-1*"
+      input-per-token: 0.000010
+      output-per-token: 0.000050
+      cache-read-per-token: 0.00000025
+      cache-write-per-token: 0.0000125
+    - model: "claude-fable-5*"
+      input-per-token: 0.000010
+      output-per-token: 0.000050
+      cache-read-per-token: 0.000001
+      cache-write-per-token: 0.0000125
+    - model: "claude-opus-4-1*"
+      input-per-token: 0.000015
+      output-per-token: 0.000075
+      cache-read-per-token: 0.0000015
+      cache-write-per-token: 0.00001875
+    - model: "claude-opus-*"
+      input-per-token: 0.000005
+      output-per-token: 0.000025
+      cache-read-per-token: 0.0000005
+      cache-write-per-token: 0.00000625
+    - model: "claude-sonnet-5*"
+      input-per-token: 0.000002
+      output-per-token: 0.000010
+      cache-read-per-token: 0.0000002
+      cache-write-per-token: 0.0000025
+    - model: "claude-sonnet-*"
+      input-per-token: 0.000003
+      output-per-token: 0.000015
+      cache-read-per-token: 0.0000003
+      cache-write-per-token: 0.00000375
+    - model: "claude-haiku-*"
+      input-per-token: 0.000001
+      output-per-token: 0.000005
+      cache-read-per-token: 0.0000001
+      cache-write-per-token: 0.00000125
 
 # Claude credentials are tried in round-robin order when an upstream request
 # fails. Enable extra retry rounds for transient failures and exhausted keys.
@@ -884,3 +919,5 @@ nonstream-keepalive-interval: 0
 #       params: # JSON paths (gjson/sjson syntax) to remove from the payload
 #         - "generationConfig.thinkingConfig.thinkingBudget"
 #         - "generationConfig.responseJsonSchema"
+
+

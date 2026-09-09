@@ -11,6 +11,8 @@ api-keys:
 pricing:
   enabled: true
   in-memory: true
+  database-dsn-env: CPA_PRICING_DATABASE_DSN
+  database-table: billing_ledger
   revision: "anthropic-2026-09"
   rate-multiplier: 1
   default:
@@ -19,11 +21,31 @@ pricing:
     cache-read-per-token: 0
     cache-write-per-token: 0
   rules:
+    - model: "claude-fable-5-1*"
+      input-per-token: 0.000010
+      output-per-token: 0.000050
+      cache-read-per-token: 0.00000025
+      cache-write-per-token: 0.0000125
+    - model: "claude-fable-5*"
+      input-per-token: 0.000010
+      output-per-token: 0.000050
+      cache-read-per-token: 0.000001
+      cache-write-per-token: 0.0000125
+    - model: "claude-opus-4-1*"
+      input-per-token: 0.000015
+      output-per-token: 0.000075
+      cache-read-per-token: 0.0000015
+      cache-write-per-token: 0.00001875
     - model: "claude-opus-*"
       input-per-token: 0.000005
       output-per-token: 0.000025
       cache-read-per-token: 0.0000005
       cache-write-per-token: 0.00000625
+    - model: "claude-sonnet-5*"
+      input-per-token: 0.000002
+      output-per-token: 0.000010
+      cache-read-per-token: 0.0000002
+      cache-write-per-token: 0.0000025
     - model: "claude-sonnet-*"
       input-per-token: 0.000003
       output-per-token: 0.000015
@@ -778,3 +800,5 @@ nonstream-keepalive-interval: 0
 #       params: # JSON paths (gjson/sjson syntax) to remove from the payload
 #         - "generationConfig.thinkingConfig.thinkingBudget"
 #         - "generationConfig.responseJsonSchema"
+
+
