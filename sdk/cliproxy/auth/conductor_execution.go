@@ -1314,7 +1314,36 @@ func hasRequestedModelMetadata(meta map[string]any) bool {
 }
 
 type requestAuthPrepareLock struct {
-	mu sync.Mutex
+	once  sync.Once
+	token chan struct{}
+}
+
+// acquire serializes credential mutation, but lets canceled waiters leave
+// without waiting for another request's profile lookup or token refresh.
+func (l *requestAuthPrepareLock) acquire(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	l.once.Do(func() { l.token = make(chan struct{}, 1) })
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case l.token <- struct{}{}:
+		// Both cases can become ready together. Never begin credential work
+		// when cancellation won the race with acquiring an idle lock.
+		if err := ctx.Err(); err != nil {
+			l.release()
+			return err
+		}
+		return nil
+	}
+}
+
+func (l *requestAuthPrepareLock) release() {
+	<-l.token
 }
 
 // prepareHomeRequestAuth prepares a dispatch auth without reading or updating local auth state.
@@ -1363,8 +1392,10 @@ func (m *Manager) prepareHomeAuthSnapshot(ctx context.Context, executor Provider
 	if !ok || lock == nil {
 		return prepare()
 	}
-	lock.mu.Lock()
-	defer lock.mu.Unlock()
+	if err := lock.acquire(ctx); err != nil {
+		return auth, err
+	}
+	defer lock.release()
 	return prepare()
 }
 
@@ -1388,8 +1419,10 @@ func (m *Manager) prepareRequestAuth(ctx context.Context, executor ProviderExecu
 		return preparer.PrepareRequestAuth(ctx, auth.Clone())
 	}
 
-	lock.mu.Lock()
-	defer lock.mu.Unlock()
+	if err := lock.acquire(ctx); err != nil {
+		return auth, err
+	}
+	defer lock.release()
 
 	target := auth.Clone()
 	m.mu.RLock()

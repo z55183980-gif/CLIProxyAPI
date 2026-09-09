@@ -37,6 +37,25 @@ type disabledPricingPlugin struct{}
 
 func (disabledPricingPlugin) HandleUsage(context.Context, usage.Record) {}
 
+// servicePricingPlugin stays bound to the service rather than to a particular
+// database connection. A dispatcher may have captured this wrapper before a
+// reload; it must resolve the current target only when it starts processing.
+type servicePricingPlugin struct{ service *Service }
+
+func (p servicePricingPlugin) HandleUsage(ctx context.Context, record usage.Record) {
+	if p.service == nil {
+		return
+	}
+	s := p.service
+	s.pricingMu.Lock()
+	defer s.pricingMu.Unlock()
+	if s.pricingPlugin != nil {
+		// Keep the sink alive through Apply and totals updates. Reconfiguration
+		// and closePricing take the same lock before replacing/closing it.
+		s.pricingPlugin.HandleUsage(ctx, record)
+	}
+}
+
 // configurePricing applies the optional pricing plugin for the supplied
 // configuration. Durable mode reads a PostgreSQL DSN from the configured
 // environment variable; in-memory mode is intended for previews and tests.
@@ -64,6 +83,7 @@ func (s *Service) configurePricing(ctx context.Context, cfg *config.Config) erro
 		}
 		s.pricingSink = nil
 		s.pricingTotals = nil
+		s.pricingPlugin = nil
 		if pricingOwner.service == s {
 			usage.RegisterNamedPlugin(pricingPluginName, disabledPricingPlugin{})
 			pricingOwner.service = nil
@@ -112,10 +132,11 @@ func (s *Service) configurePricing(ctx context.Context, cfg *config.Config) erro
 		_ = s.pricingDB.Close()
 	}
 	pricingOwner.service = s
-	usage.RegisterNamedPlugin(pricingPluginName, plugin)
 	s.pricingDB = db
 	s.pricingSink = sink
 	s.pricingTotals = totals
+	s.pricingPlugin = plugin
+	usage.RegisterNamedPlugin(pricingPluginName, servicePricingPlugin{service: s})
 	return nil
 }
 
@@ -133,6 +154,7 @@ func (s *Service) closePricing() {
 	}
 	s.pricingSink = nil
 	s.pricingTotals = nil
+	s.pricingPlugin = nil
 	if pricingOwner.service == s {
 		usage.RegisterNamedPlugin(pricingPluginName, disabledPricingPlugin{})
 		pricingOwner.service = nil

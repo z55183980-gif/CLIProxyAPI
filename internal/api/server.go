@@ -43,6 +43,12 @@ type Server struct {
 	// server is the underlying HTTP server.
 	server *http.Server
 
+	// lifecycleMu publishes initialized listeners atomically to Stop. A stopped
+	// http.Server cannot be restarted, including when Stop precedes Start.
+	lifecycleMu sync.Mutex
+	started     bool
+	stopped     bool
+
 	// muxBaseListener is the shared TCP listener used to serve both HTTP and Redis protocol traffic.
 	muxBaseListener net.Listener
 
@@ -50,7 +56,7 @@ type Server struct {
 	muxHTTPListener *muxListener
 
 	// handlers contains the API handlers for processing requests.
-	handlers         *handlers.BaseAPIHandler
+	handlers *handlers.BaseAPIHandler
 
 	// cfg holds the current server configuration.
 	cfg *config.Config
@@ -264,6 +270,22 @@ func (s *Server) Start() error {
 	if s == nil || s.server == nil {
 		return fmt.Errorf("failed to start HTTP server: server not initialized")
 	}
+	s.lifecycleMu.Lock()
+	if s.stopped {
+		s.lifecycleMu.Unlock()
+		return nil
+	}
+	if s.started {
+		s.lifecycleMu.Unlock()
+		return errors.New("failed to start HTTP server: already started")
+	}
+	s.started = true
+	initializing := true
+	defer func() {
+		if initializing {
+			s.lifecycleMu.Unlock()
+		}
+	}()
 
 	addr := s.server.Addr
 	listener, errListen := net.Listen("tcp", addr)
@@ -306,6 +328,8 @@ func (s *Server) Start() error {
 	httpListener := newMuxListener(listener.Addr(), 1024)
 	s.muxBaseListener = listener
 	s.muxHTTPListener = httpListener
+	initializing = false
+	s.lifecycleMu.Unlock()
 
 	httpErrCh := make(chan error, 1)
 	acceptErrCh := make(chan error, 1)
@@ -319,13 +343,13 @@ func (s *Server) Start() error {
 
 	select {
 	case errServe := <-httpErrCh:
-		if s.muxBaseListener != nil {
-			if errClose := s.muxBaseListener.Close(); errClose != nil && !errors.Is(errClose, net.ErrClosed) {
+		if listener != nil {
+			if errClose := listener.Close(); errClose != nil && !errors.Is(errClose, net.ErrClosed) {
 				log.Debugf("failed to close shared listener after HTTP serve exit: %v", errClose)
 			}
 		}
-		if s.muxHTTPListener != nil {
-			_ = s.muxHTTPListener.Close()
+		if httpListener != nil {
+			_ = httpListener.Close()
 		}
 		errAccept := <-acceptErrCh
 		errServe = normalizeHTTPServeError(errServe)
@@ -338,11 +362,11 @@ func (s *Server) Start() error {
 		}
 		return nil
 	case errAccept := <-acceptErrCh:
-		if s.muxHTTPListener != nil {
-			_ = s.muxHTTPListener.Close()
+		if httpListener != nil {
+			_ = httpListener.Close()
 		}
-		if s.muxBaseListener != nil {
-			if errClose := s.muxBaseListener.Close(); errClose != nil && !errors.Is(errClose, net.ErrClosed) {
+		if listener != nil {
+			if errClose := listener.Close(); errClose != nil && !errors.Is(errClose, net.ErrClosed) {
 				log.Debugf("failed to close shared listener after accept loop exit: %v", errClose)
 			}
 		}
@@ -368,6 +392,12 @@ func (s *Server) Start() error {
 // Returns:
 //   - error: An error if the server fails to stop
 func (s *Server) Stop(ctx context.Context) error {
+	if s == nil || s.server == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	log.Debug("Stopping API server...")
 
 	if s.keepAliveEnabled {
@@ -377,11 +407,15 @@ func (s *Server) Stop(ctx context.Context) error {
 		}
 	}
 
-	if s.muxHTTPListener != nil {
-		_ = s.muxHTTPListener.Close()
+	s.lifecycleMu.Lock()
+	s.stopped = true
+	httpListener, listener := s.muxHTTPListener, s.muxBaseListener
+	s.lifecycleMu.Unlock()
+	if httpListener != nil {
+		_ = httpListener.Close()
 	}
-	if s.muxBaseListener != nil {
-		if errClose := s.muxBaseListener.Close(); errClose != nil && !errors.Is(errClose, net.ErrClosed) {
+	if listener != nil {
+		if errClose := listener.Close(); errClose != nil && !errors.Is(errClose, net.ErrClosed) {
 			log.Debugf("failed to close shared listener: %v", errClose)
 		}
 	}
@@ -389,7 +423,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	// Shutdown the HTTP server.
 	errShutdown := s.server.Shutdown(ctx)
 	if errShutdown != nil {
-		return fmt.Errorf("failed to shutdown HTTP server: %v", errShutdown)
+		return fmt.Errorf("failed to shutdown HTTP server: %w", errShutdown)
 	}
 
 	log.Debug("API server stopped")
