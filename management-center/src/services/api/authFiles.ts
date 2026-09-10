@@ -13,6 +13,14 @@ import {
 } from '@/utils/recentRequests';
 import { parseTimestampMs } from '@/utils/timestamp';
 
+export type AuthFileModelTestResult = {
+  success: boolean;
+  model: string;
+  latency_ms: number;
+  status_code?: number;
+  error?: string;
+};
+
 type StatusError = { status?: number };
 type AuthFileStatusResponse = { status: string; disabled: boolean };
 type AuthFileEntry = AuthFilesResponse['files'][number];
@@ -416,7 +424,14 @@ export const buildManualRefreshExpiredAt = (nowMs = Date.now()): string =>
 
 export const authFilesApi = {
   list: async () =>
-    normalizeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/auth-files')),
+      normalizeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/auth-files')),
+
+  testModel: (name: string, authIndex: string, model: string, signal?: AbortSignal) =>
+    apiClient.post<AuthFileModelTestResult>(
+      '/auth-files/test-model',
+      { name, auth_index: authIndex, model },
+      { signal, timeout: 0 }
+    ),
 
   setStatus: (name: string, disabled: boolean) =>
     apiClient.patch<AuthFileStatusResponse>('/auth-files/status', { name, disabled }),

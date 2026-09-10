@@ -2,6 +2,9 @@ import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import type { AuthFileItem } from '@/types';
+import { useAuthFileModelTests } from '../hooks/useAuthFileModelTests';
 import type { AuthFileModelItem } from '@/features/authFiles/constants';
 import { isModelExcluded } from '@/features/authFiles/constants';
 import styles from './AuthFileModelsModal.module.scss';
@@ -9,6 +12,7 @@ import styles from './AuthFileModelsModal.module.scss';
 export type AuthFileModelsModalProps = {
   open: boolean;
   fileName: string;
+  authFile: AuthFileItem | null;
   fileType: string;
   loading: boolean;
   error: 'unsupported' | null;
@@ -20,7 +24,19 @@ export type AuthFileModelsModalProps = {
 
 export function AuthFileModelsModal(props: AuthFileModelsModalProps) {
   const { t } = useTranslation();
-  const { open, fileName, fileType, loading, error, models, excluded, onClose, onCopyText } = props;
+  const {
+    open,
+    fileName,
+    authFile,
+    fileType,
+    loading,
+    error,
+    models,
+    excluded,
+    onClose,
+    onCopyText,
+  } = props;
+  const { results, testModel, disabled } = useAuthFileModelTests(open, authFile);
 
   return (
     <Modal
@@ -55,31 +71,61 @@ export function AuthFileModelsModal(props: AuthFileModelsModalProps) {
         <div className={styles.list}>
           {models.map((model) => {
             const excludedModel = isModelExcluded(model.id, fileType, excluded);
+            const result = results[model.id];
             return (
               <div
                 key={model.id}
                 className={`${styles.item} ${excludedModel ? styles.itemExcluded : ''}`}
-                onClick={() => {
-                  onCopyText(model.id);
-                }}
-                title={
-                  excludedModel
-                    ? t('auth_files.models_excluded_hint', {
-                        defaultValue: '此 OAuth 模型已被禁用',
-                      })
-                    : t('common.copy', { defaultValue: '点击复制' })
-                }
               >
-                <span className={styles.modelId}>{model.id}</span>
-                {model.display_name && model.display_name !== model.id && (
-                  <span className={styles.modelDisplayName}>{model.display_name}</span>
-                )}
-                {model.type && <span className={styles.modelType}>{model.type}</span>}
-                {excludedModel && (
-                  <span className={styles.excludedBadge}>
-                    {t('auth_files.models_excluded_badge', { defaultValue: '已禁用' })}
-                  </span>
-                )}
+                <button
+                  type="button"
+                  className={styles.modelInfo}
+                  onClick={() => onCopyText(model.id)}
+                  title={t('common.copy')}
+                >
+                  <span className={styles.modelId}>{model.id}</span>
+                  {model.display_name && model.display_name !== model.id && (
+                    <span className={styles.modelDisplayName}>{model.display_name}</span>
+                  )}
+                  {model.type && <span className={styles.modelType}>{model.type}</span>}
+                  {excludedModel && (
+                    <span className={styles.excludedBadge}>
+                      {t('auth_files.models_excluded_badge', { defaultValue: '已禁用' })}
+                    </span>
+                  )}
+                </button>
+                <div className={styles.testActions}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={disabled || excludedModel || result?.status === 'testing'}
+                    onClick={() => void testModel(model.id)}
+                    aria-label={`${t('auth_files.test_connection')} ${model.id}`}
+                  >
+                    {result?.status === 'testing' && <LoadingSpinner size={14} />}
+                    {t(
+                      result?.status === 'testing'
+                        ? 'auth_files.model_test_running'
+                        : 'auth_files.test_connection'
+                    )}
+                  </Button>
+                  {result && result.status !== 'testing' && (
+                    <span
+                      className={
+                        result.status === 'success' ? styles.testSuccess : styles.testError
+                      }
+                      role="status"
+                    >
+                      {t(
+                        result.status === 'success'
+                          ? 'auth_files.test_connection_success'
+                          : 'auth_files.test_connection_failed'
+                      )}
+                      {result.latencyMs != null && ` · ${result.latencyMs} ms`}
+                      {result.error && `: ${result.error}`}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}

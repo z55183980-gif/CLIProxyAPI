@@ -87,24 +87,6 @@ func (h *Handler) GetAccountUsageWindows(c *gin.Context) {
 	result := accountUsageWindows{Source: "passive"}
 	if auth.Provider == "codex" {
 		windows := codexObservedWindows(cache.signals, cache.observedAt, now)
-		missing := windows[0].ResetAt == nil || windows[1].ResetAt == nil
-		websockets, _ := authWebsocketsValue(auth)
-		stale := websockets && now.Sub(cache.observedAt) >= 10*time.Minute
-		if force || ((missing || stale || auth.Quota.Exceeded) && now.Sub(cache.probeAt) >= 10*time.Minute) {
-			cache.probeAt = now
-			headers, _, errProbe := h.requestUsageWindow(c.Request.Context(), auth, true)
-			if errProbe == nil {
-				var observed coreauth.QuotaState
-				if observed.ObserveResponseHeadersForProvider("codex", headers, now) {
-					cache.signals, cache.observedAt = observed.Signals, now
-					windows = codexObservedWindows(cache.signals, now, now)
-				} else {
-					result.Error = "upstream returned no quota snapshot"
-				}
-			} else {
-				result.Error = errProbe.Error()
-			}
-		}
 		result.Windows = windows
 	} else {
 		result.Windows = claudeObservedWindows(cache.signals, cache.observedAt, now)

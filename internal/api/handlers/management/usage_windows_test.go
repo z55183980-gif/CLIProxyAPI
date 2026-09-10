@@ -22,7 +22,7 @@ type usageWindowTestClient func(*http.Request) (*http.Response, error)
 func (f usageWindowTestClient) Do(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestUsageWindowsActiveRequestsAndCache(t *testing.T) {
-	for _, provider := range []string{"claude", "codex"} {
+	for _, provider := range []string{"claude"} {
 		t.Run(provider, func(t *testing.T) {
 			manager := coreauth.NewManager(nil, nil, nil)
 			auth, err := manager.Register(context.Background(), &coreauth.Auth{ID: provider, Provider: provider, Metadata: map[string]any{"access_token": "fixture", "account_id": "fixture-account"}})
@@ -37,17 +37,7 @@ func TestUsageWindowsActiveRequestsAndCache(t *testing.T) {
 				}
 				header := make(http.Header)
 				body := `{"five_hour":{"utilization":17,"resets_at":"2099-01-01T00:00:00Z"},"seven_day_overage_included":{"utilization":34,"resets_at":"2099-01-02T00:00:00Z"}}`
-				if provider == "codex" {
-					if req.Method != "POST" || req.URL.Path != "/backend-api/codex/responses" || req.Header.Get("Chatgpt-Account-Id") != "fixture-account" {
-						t.Fatalf("wrong Codex probe: %s %s", req.Method, req.URL)
-					}
-					header.Set("X-Codex-Primary-Used-Percent", "17")
-					header.Set("X-Codex-Primary-Window-Minutes", "300")
-					header.Set("X-Codex-Primary-Reset-After-Seconds", "3600")
-					header.Set("X-Codex-Secondary-Used-Percent", "34")
-					header.Set("X-Codex-Secondary-Window-Minutes", "10080")
-					header.Set("X-Codex-Secondary-Reset-After-Seconds", "7200")
-				} else if req.Method != "GET" || req.URL.Path != "/api/oauth/usage" || req.Header.Get("Anthropic-Beta") == "" {
+				if req.Method != "GET" || req.URL.Path != "/api/oauth/usage" || req.Header.Get("Anthropic-Beta") == "" {
 					t.Fatalf("wrong Claude query: %s %s", req.Method, req.URL)
 				}
 				return &http.Response{StatusCode: 200, Header: header, Body: io.NopCloser(strings.NewReader(body))}, nil
@@ -84,11 +74,6 @@ func TestUsageWindowsActiveRequestsAndCache(t *testing.T) {
 				query("active")
 				if calls != 1 || !hasUsageWindow(passive.Windows, "seven-day-fable") {
 					t.Fatalf("Claude cache failed: calls=%d", calls)
-				}
-			} else {
-				query("active")
-				if calls != 2 {
-					t.Fatal("manual Codex probe did not bypass cache")
 				}
 			}
 			live, _ := manager.GetByID(provider)
@@ -283,5 +268,48 @@ func TestAccountUsageWindowsActiveRefreshReadsNewStatistics(t *testing.T) {
 	}
 	if stats := query("active"); stats.Requests != 1 || stats.Tokens != 482 {
 		t.Fatalf("active query did not read the new request: %+v", stats)
+	}
+}
+
+// Codex window refreshes read observed quota data without generating upstream traffic.
+func TestCodexUsageWindowsNeverProbesUpstream(t *testing.T) {
+	manager := coreauth.NewManager(nil, nil, nil)
+	auth, errRegister := manager.Register(context.Background(), &coreauth.Auth{
+		ID: "passive-codex", Provider: "codex", Metadata: map[string]any{"access_token": "fixture"},
+	})
+	if errRegister != nil {
+		t.Fatal(errRegister)
+	}
+	h := &Handler{authManager: manager, usageWindowHTTPClient: usageWindowTestClient(func(*http.Request) (*http.Response, error) {
+		t.Fatal("Codex usage window refresh must not call upstream")
+		return nil, nil
+	})}
+	for _, observed := range []bool{false, true} {
+		if observed {
+			auth.Quota = coreauth.QuotaState{ObservedAt: time.Now(), Signals: map[string]string{
+				"X-Codex-Primary-Used-Percent": "17", "X-Codex-Primary-Window-Minutes": "300",
+				"X-Codex-Primary-Reset-After-Seconds": "3600",
+			}}
+			if _, errUpdate := manager.Update(context.Background(), auth); errUpdate != nil {
+				t.Fatal(errUpdate)
+			}
+		}
+		for _, source := range []string{"passive", "active", "active"} {
+			rec := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(rec)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/auth-files/usage-windows?auth_index="+auth.Index+"&source="+source, nil)
+			h.GetAccountUsageWindows(ctx)
+			var result accountUsageWindows
+			if errDecode := json.Unmarshal(rec.Body.Bytes(), &result); errDecode != nil {
+				t.Fatal(errDecode)
+			}
+			want := float64(0)
+			if observed {
+				want = 17
+			}
+			if rec.Code != 200 || result.Source != "passive" || len(result.Windows) != 2 || result.Windows[0].UsedPercent != want {
+				t.Fatalf("observed=%v source=%s result=%s", observed, source, rec.Body.String())
+			}
+		}
 	}
 }

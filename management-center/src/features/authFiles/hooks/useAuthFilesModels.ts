@@ -14,9 +14,10 @@ export type UseAuthFilesModelsResult = {
   modelsFileName: string;
   modelsFileType: string;
   modelsError: ModelsError;
+  modelsAuthFile: AuthFileItem | null;
   showModels: (item: AuthFileItem) => Promise<void>;
   closeModelsModal: () => void;
-  /** 文件集变更后失效缓存；不传 names 则全部清空。 */
+  /** Invalidate cached files, or the entire cache when names are omitted. */
   invalidateModels: (names?: string[]) => void;
 };
 
@@ -24,6 +25,7 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
 
+  const [modelsAuthFile, setModelsAuthFile] = useState<AuthFileItem | null>(null);
   const [modelsModalOpen, setModelsModalOpen] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsList, setModelsList] = useState<AuthFileModelItem[]>([]);
@@ -59,6 +61,7 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
       const cacheKey = item.name.trim();
       const requestId = ++activeModelsRequestIdRef.current;
 
+      setModelsAuthFile(item);
       setModelsFileName(item.name);
       setModelsFileType(item.type || '');
       setModelsList([]);
@@ -112,6 +115,7 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
     modelsFileName,
     modelsFileType,
     modelsError,
+    modelsAuthFile,
     showModels,
     closeModelsModal,
     invalidateModels,
