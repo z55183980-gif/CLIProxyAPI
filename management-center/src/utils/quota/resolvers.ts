@@ -110,6 +110,9 @@ export function resolveCodexSubscriptionActiveUntil(file: AuthFileItem): string 
   const subscription = toRecord(file.subscription);
   const metadataSubscription = toRecord(metadata?.subscription);
   const attributesSubscription = toRecord(attributes?.subscription);
+  const entitlement = toRecord(file.entitlement);
+  const metadataEntitlement = toRecord(metadata?.entitlement);
+  const attributesEntitlement = toRecord(attributes?.entitlement);
 
   const candidates = [
     file.chatgpt_subscription_active_until,
@@ -118,6 +121,10 @@ export function resolveCodexSubscriptionActiveUntil(file: AuthFileItem): string 
     file.subscriptionActiveUntil,
     subscription?.active_until,
     subscription?.activeUntil,
+    subscription?.expires_at,
+    subscription?.expiresAt,
+    entitlement?.expires_at,
+    entitlement?.expiresAt,
     idToken?.chatgpt_subscription_active_until,
     idToken?.chatgptSubscriptionActiveUntil,
     metadata?.chatgpt_subscription_active_until,
@@ -126,6 +133,10 @@ export function resolveCodexSubscriptionActiveUntil(file: AuthFileItem): string 
     metadata?.subscriptionActiveUntil,
     metadataSubscription?.active_until,
     metadataSubscription?.activeUntil,
+    metadataSubscription?.expires_at,
+    metadataSubscription?.expiresAt,
+    metadataEntitlement?.expires_at,
+    metadataEntitlement?.expiresAt,
     metadataIdToken?.chatgpt_subscription_active_until,
     metadataIdToken?.chatgptSubscriptionActiveUntil,
     attributes?.chatgpt_subscription_active_until,
@@ -134,6 +145,10 @@ export function resolveCodexSubscriptionActiveUntil(file: AuthFileItem): string 
     attributes?.subscriptionActiveUntil,
     attributesSubscription?.active_until,
     attributesSubscription?.activeUntil,
+    attributesSubscription?.expires_at,
+    attributesSubscription?.expiresAt,
+    attributesEntitlement?.expires_at,
+    attributesEntitlement?.expiresAt,
     attributesIdToken?.chatgpt_subscription_active_until,
     attributesIdToken?.chatgptSubscriptionActiveUntil,
   ];

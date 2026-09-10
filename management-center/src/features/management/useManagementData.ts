@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '@/stores';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 
 /** Discard in-flight responses on navigation, logout, or connection changes. */
 export function useManagementData<T>(loader: (signal: AbortSignal) => Promise<T>, initial: T) {
@@ -12,7 +11,13 @@ export function useManagementData<T>(loader: (signal: AbortSignal) => Promise<T>
   const initialData = useRef(initial);
   const controller = useRef<AbortController | null>(null);
   const pending = useRef(false);
+  const lastRefreshAt = useRef(0);
   const refresh = useCallback(async () => {
+    // Protect the management API from accidental refresh storms when several
+    // components trigger the shared header refresh at the same time.
+    const now = Date.now();
+    if (pending.current || now - lastRefreshAt.current < 1000) return;
+    lastRefreshAt.current = now;
     controller.current?.abort();
     const request = new AbortController();
     controller.current = request;
@@ -34,14 +39,9 @@ export function useManagementData<T>(loader: (signal: AbortSignal) => Promise<T>
   useEffect(() => {
     setData(initialData.current);
     void refresh();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && !pending.current) void refresh();
-    }, 10000);
     return () => {
       controller.current?.abort();
-      window.clearInterval(timer);
     };
   }, [refresh, apiBase, key]);
-  useHeaderRefresh(refresh);
   return { data, loading, error, refresh };
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/pluginhost"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 )
 
 type serverOptionConfig struct {
@@ -28,7 +27,6 @@ type serverOptionConfig struct {
 	pluginHost            *pluginhost.Host
 	configReloadHook      func(context.Context, *config.Config)
 	exampleAPIKeySafeMode bool
-	billingUsageProvider  func(context.Context) ([]usage.AccountTotal, error)
 }
 
 // ServerOption customises HTTP server construction.
@@ -47,6 +45,8 @@ func effectiveSDKConfig(cfg *config.Config) *config.SDKConfig {
 		return nil
 	}
 	sdkCfg := cfg.SDKConfig
+	sdkCfg.CodexOptimizeMultiAgentV2 = cfg.Codex.OptimizeMultiAgentV2
+	sdkCfg.CodexOrphanDelegationCompatibility = cfg.Codex.OrphanDelegationCompatibility
 	if cfg.CommercialMode {
 		sdkCfg.RequestLog = false
 	}
@@ -132,13 +132,5 @@ func WithConfigReloadHook(hook func(context.Context, *config.Config)) ServerOpti
 func WithExampleAPIKeySafeMode() ServerOption {
 	return func(cfg *serverOptionConfig) {
 		cfg.exampleAPIKeySafeMode = true
-	}
-}
-
-// WithBillingUsageProvider exposes durable token billing totals to the
-// authenticated management API. The callback is evaluated per request.
-func WithBillingUsageProvider(provider func(context.Context) ([]usage.AccountTotal, error)) ServerOption {
-	return func(cfg *serverOptionConfig) {
-		cfg.billingUsageProvider = provider
 	}
 }

@@ -1,9 +1,5 @@
 @use '../../styles/mixins' as *;
 
-/* ============================================================
- * 额度页壳层：纯布局，视觉细节都在各组件的 colocated 模块里。
- * ============================================================ */
-
 .page {
   display: flex;
   flex-direction: column;
@@ -12,16 +8,12 @@
   min-width: 0;
 }
 
-/* ---------- 工作区（tabs + 网格 + 分页） ---------- */
-
 .workbench {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
 }
-
-/* tabs 与排序同一行：tabs 会自己横向滚动，所以排序固定不压缩。 */
 
 .tabsRow {
   display: flex;
@@ -62,23 +54,63 @@
   overflow-wrap: anywhere;
 }
 
-/* ---------- 卡片网格 ----------
- * 列宽由 CSS 决定（不再用 JS 测量）：额度卡承载水位条，取 340px 下限，
- * 与认证文件页配额模式（.gridQuota）同一档。 */
-
-.grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
-  align-items: stretch;
+.tableScroll {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
 }
-
-/* ---------- 分页 ---------- */
+.table {
+  width: 100%;
+  min-width: 1450px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  th {
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-tertiary);
+    font-size: 11px;
+    font-weight: 600;
+  }
+}
+.accountColumn {
+  width: 25%;
+}
+.providerColumn {
+  width: 140px;
+}
+.statusColumn {
+  width: 120px;
+}
+.quotaColumn {
+  width: 252px;
+}
+.capacityColumn {
+  width: 155px;
+}
+.priorityColumn,
+.weightColumn {
+  width: 100px;
+}
+.loadingRows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
 
 .pagination {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 14px;
   flex-wrap: wrap;
 }
@@ -96,4 +128,60 @@
   .page {
     gap: 16px;
   }
+}
+
+.table th.quotaColumn {
+  background: #f9fafb;
+}
+.usageHeading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+}
+.usageHeading > span {
+  display: inline-flex;
+  color: #9ca3af;
+  cursor: help;
+}
+:global([data-theme='dark']) {
+  .table th.quotaColumn {
+    background: #111827;
+  }
+  .usageHeading {
+    color: #d1d5db;
+  }
+}
+
+.table th.todayColumn {
+  width: 172px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sortHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+}
+.sortIndicator {
+  color: var(--text-tertiary);
+}
+th[aria-sort='ascending'] .sortHeader,
+th[aria-sort='descending'] .sortHeader {
+  color: var(--text-primary);
 }

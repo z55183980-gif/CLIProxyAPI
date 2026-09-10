@@ -328,8 +328,12 @@ func TestManager_RequestRetryRunsAdditionalLocalRoundWithoutCooldown(t *testing.
 			if errExecute := tc.execute(m, cliproxyexecutor.Request{Model: model}); errExecute == nil || statusCodeFromError(errExecute) != http.StatusInternalServerError {
 				t.Fatalf("execute error = %v, want status 500", errExecute)
 			}
-			if got := executor.Calls(); got != 2 {
-				t.Fatalf("executor calls = %d, want initial round plus one additional round", got)
+			wantCalls := 1
+			if tc.name == "count tokens" {
+				wantCalls = 2
+			}
+			if got := executor.Calls(); got != wantCalls {
+				t.Fatalf("executor calls = %d, want %d", got, wantCalls)
 			}
 		})
 	}
@@ -648,8 +652,12 @@ func TestManager_MaxRetryCredentials_LimitsCrossCredentialRetries(t *testing.T) 
 			if errInvoke := tc.invoke(limitedManager); errInvoke == nil {
 				t.Fatalf("expected error for limited retry execution")
 			}
-			if calls := limitedExecutor.Calls(); calls != 1 {
-				t.Fatalf("expected 1 call with max-retry-credentials=1, got %d", calls)
+			wantCalls := 2
+			if tc.name == "execute_count" {
+				wantCalls = 1
+			}
+			if calls := limitedExecutor.Calls(); calls != wantCalls {
+				t.Fatalf("expected %d calls, got %d", wantCalls, calls)
 			}
 
 			unlimitedManager, unlimitedExecutor := newCredentialRetryLimitTestManager(t, 0)
@@ -666,7 +674,7 @@ func TestManager_MaxRetryCredentials_LimitsCrossCredentialRetries(t *testing.T) 
 func TestManager_ModelSupportBadRequest_FallsBackAndSuspendsAuth(t *testing.T) {
 	m := NewManager(nil, nil, nil)
 	executor := &authFallbackExecutor{
-		id: "claude",
+		id: "gemini",
 		executeErrors: map[string]error{
 			"aa-bad-auth": &Error{
 				HTTPStatus: http.StatusBadRequest,
@@ -677,12 +685,12 @@ func TestManager_ModelSupportBadRequest_FallsBackAndSuspendsAuth(t *testing.T) {
 	m.RegisterExecutor(executor)
 
 	model := "claude-opus-4-6"
-	badAuth := &Auth{ID: "aa-bad-auth", Provider: "claude"}
-	goodAuth := &Auth{ID: "bb-good-auth", Provider: "claude"}
+	badAuth := &Auth{ID: "aa-bad-auth", Provider: "gemini"}
+	goodAuth := &Auth{ID: "bb-good-auth", Provider: "gemini"}
 
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(badAuth.ID, "claude", []*registry.ModelInfo{{ID: model}})
-	reg.RegisterClient(goodAuth.ID, "claude", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(badAuth.ID, "gemini", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(goodAuth.ID, "gemini", []*registry.ModelInfo{{ID: model}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(badAuth.ID)
 		reg.UnregisterClient(goodAuth.ID)
@@ -697,7 +705,7 @@ func TestManager_ModelSupportBadRequest_FallsBackAndSuspendsAuth(t *testing.T) {
 
 	request := cliproxyexecutor.Request{Model: model}
 	for i := 0; i < 2; i++ {
-		resp, errExecute := m.Execute(context.Background(), []string{"claude"}, request, cliproxyexecutor.Options{})
+		resp, errExecute := m.Execute(context.Background(), []string{"gemini"}, request, cliproxyexecutor.Options{})
 		if errExecute != nil {
 			t.Fatalf("execute %d error = %v, want success", i, errExecute)
 		}
@@ -888,7 +896,7 @@ func TestManagerExecuteStream_AntigravityInvalidGrantFallsBackAndSuspendsAuth(t 
 func TestManagerExecuteStream_ModelSupportBadRequestFallsBackAndSuspendsAuth(t *testing.T) {
 	m := NewManager(nil, nil, nil)
 	executor := &authFallbackExecutor{
-		id: "claude",
+		id: "gemini",
 		streamFirstErrors: map[string]error{
 			"aa-bad-auth": &Error{
 				HTTPStatus: http.StatusBadRequest,
@@ -899,12 +907,12 @@ func TestManagerExecuteStream_ModelSupportBadRequestFallsBackAndSuspendsAuth(t *
 	m.RegisterExecutor(executor)
 
 	model := "claude-opus-4-6"
-	badAuth := &Auth{ID: "aa-bad-auth", Provider: "claude"}
-	goodAuth := &Auth{ID: "bb-good-auth", Provider: "claude"}
+	badAuth := &Auth{ID: "aa-bad-auth", Provider: "gemini"}
+	goodAuth := &Auth{ID: "bb-good-auth", Provider: "gemini"}
 
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(badAuth.ID, "claude", []*registry.ModelInfo{{ID: model}})
-	reg.RegisterClient(goodAuth.ID, "claude", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(badAuth.ID, "gemini", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(goodAuth.ID, "gemini", []*registry.ModelInfo{{ID: model}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(badAuth.ID)
 		reg.UnregisterClient(goodAuth.ID)
@@ -919,7 +927,7 @@ func TestManagerExecuteStream_ModelSupportBadRequestFallsBackAndSuspendsAuth(t *
 
 	request := cliproxyexecutor.Request{Model: model}
 	for i := 0; i < 2; i++ {
-		streamResult, errExecute := m.ExecuteStream(context.Background(), []string{"claude"}, request, cliproxyexecutor.Options{})
+		streamResult, errExecute := m.ExecuteStream(context.Background(), []string{"gemini"}, request, cliproxyexecutor.Options{})
 		if errExecute != nil {
 			t.Fatalf("execute stream %d error = %v, want success", i, errExecute)
 		}
@@ -1268,7 +1276,7 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter403(t *testing.T) {
 
 	m := NewManager(nil, nil, nil)
 	executor := &authFallbackExecutor{
-		id: "claude",
+		id: "gemini",
 		executeErrors: map[string]error{
 			"auth-403-exec": &Error{
 				HTTPStatus: http.StatusForbidden,
@@ -1280,7 +1288,7 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter403(t *testing.T) {
 
 	auth := &Auth{
 		ID:       "auth-403-exec",
-		Provider: "claude",
+		Provider: "gemini",
 		Metadata: map[string]any{
 			"disable_cooling": true,
 		},
@@ -1291,11 +1299,11 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter403(t *testing.T) {
 
 	model := "test-model-403-exec"
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth.ID, "claude", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(auth.ID, "gemini", []*registry.ModelInfo{{ID: model}})
 	t.Cleanup(func() { reg.UnregisterClient(auth.ID) })
 
 	req := cliproxyexecutor.Request{Model: model}
-	_, errExecute1 := m.Execute(context.Background(), []string{"claude"}, req, cliproxyexecutor.Options{})
+	_, errExecute1 := m.Execute(context.Background(), []string{"gemini"}, req, cliproxyexecutor.Options{})
 	if errExecute1 == nil {
 		t.Fatal("expected first execute error")
 	}
@@ -1303,7 +1311,7 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter403(t *testing.T) {
 		t.Fatalf("first execute status = %d, want %d", statusCodeFromError(errExecute1), http.StatusForbidden)
 	}
 
-	_, errExecute2 := m.Execute(context.Background(), []string{"claude"}, req, cliproxyexecutor.Options{})
+	_, errExecute2 := m.Execute(context.Background(), []string{"gemini"}, req, cliproxyexecutor.Options{})
 	if errExecute2 == nil {
 		t.Fatal("expected second execute error")
 	}
@@ -1319,7 +1327,7 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter429RetryAfter(t *tes
 
 	m := NewManager(nil, nil, nil)
 	executor := &authFallbackExecutor{
-		id: "claude",
+		id: "gemini",
 		executeErrors: map[string]error{
 			"auth-429-exec": &retryAfterStatusError{
 				status:     http.StatusTooManyRequests,
@@ -1332,7 +1340,7 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter429RetryAfter(t *tes
 
 	auth := &Auth{
 		ID:       "auth-429-exec",
-		Provider: "claude",
+		Provider: "gemini",
 		Metadata: map[string]any{
 			"disable_cooling": true,
 		},
@@ -1343,11 +1351,11 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter429RetryAfter(t *tes
 
 	model := "test-model-429-exec"
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth.ID, "claude", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(auth.ID, "gemini", []*registry.ModelInfo{{ID: model}})
 	t.Cleanup(func() { reg.UnregisterClient(auth.ID) })
 
 	req := cliproxyexecutor.Request{Model: model}
-	_, errExecute1 := m.Execute(context.Background(), []string{"claude"}, req, cliproxyexecutor.Options{})
+	_, errExecute1 := m.Execute(context.Background(), []string{"gemini"}, req, cliproxyexecutor.Options{})
 	if errExecute1 == nil {
 		t.Fatal("expected first execute error")
 	}
@@ -1355,7 +1363,7 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter429RetryAfter(t *tes
 		t.Fatalf("first execute status = %d, want %d", statusCodeFromError(errExecute1), http.StatusTooManyRequests)
 	}
 
-	_, errExecute2 := m.Execute(context.Background(), []string{"claude"}, req, cliproxyexecutor.Options{})
+	_, errExecute2 := m.Execute(context.Background(), []string{"gemini"}, req, cliproxyexecutor.Options{})
 	if errExecute2 == nil {
 		t.Fatal("expected second execute error")
 	}
@@ -1390,7 +1398,7 @@ func TestManager_Execute_DisableCooling_RetriesAfter429RetryAfter(t *testing.T) 
 	m.SetRetryConfig(3, 100*time.Millisecond, 0)
 
 	executor := &authFallbackExecutor{
-		id: "claude",
+		id: "gemini",
 		executeErrors: map[string]error{
 			"auth-429-retryafter-exec": &retryAfterStatusError{
 				status:     http.StatusTooManyRequests,
@@ -1403,7 +1411,7 @@ func TestManager_Execute_DisableCooling_RetriesAfter429RetryAfter(t *testing.T) 
 
 	auth := &Auth{
 		ID:       "auth-429-retryafter-exec",
-		Provider: "claude",
+		Provider: "gemini",
 		Metadata: map[string]any{
 			"disable_cooling": true,
 		},
@@ -1414,11 +1422,11 @@ func TestManager_Execute_DisableCooling_RetriesAfter429RetryAfter(t *testing.T) 
 
 	model := "test-model-429-retryafter-exec"
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth.ID, "claude", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(auth.ID, "gemini", []*registry.ModelInfo{{ID: model}})
 	t.Cleanup(func() { reg.UnregisterClient(auth.ID) })
 
 	req := cliproxyexecutor.Request{Model: model}
-	_, errExecute := m.Execute(context.Background(), []string{"claude"}, req, cliproxyexecutor.Options{})
+	_, errExecute := m.Execute(context.Background(), []string{"gemini"}, req, cliproxyexecutor.Options{})
 	if errExecute == nil {
 		t.Fatal("expected execute error")
 	}
@@ -1563,6 +1571,12 @@ func TestManager_RequestScopedErrorStopsCredentialFallbackWithoutSuspendingAuth(
 				}
 			} else {
 				_, errExecute = m.Execute(context.Background(), []string{provider}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
+			}
+			if provider == "codex" && (tc.wantStatus == 413 || tc.name == "streaming invalid request type behind bad gateway") {
+				if errExecute != nil {
+					t.Fatalf("account payload limit should fail over: %v", errExecute)
+				}
+				return
 			}
 			if errExecute == nil {
 				t.Fatal("expected request-scoped stream error")
@@ -2193,7 +2207,7 @@ func TestManager_Execute_GenericRouteNotFoundStillSuspendsModel(t *testing.T) {
 
 	m := NewManager(nil, nil, nil)
 	executor := &authFallbackExecutor{
-		id: "claude",
+		id: "gemini",
 		executeErrors: map[string]error{
 			"messages-route-not-found-auth": &Error{
 				HTTPStatus: http.StatusNotFound,
@@ -2204,7 +2218,7 @@ func TestManager_Execute_GenericRouteNotFoundStillSuspendsModel(t *testing.T) {
 	m.RegisterExecutor(executor)
 
 	model := "messages-route-not-found-model"
-	auth := &Auth{ID: "messages-route-not-found-auth", Provider: "claude"}
+	auth := &Auth{ID: "messages-route-not-found-auth", Provider: "gemini"}
 	reg := registry.GetGlobalRegistry()
 	reg.RegisterClient(auth.ID, auth.Provider, []*registry.ModelInfo{{ID: model}})
 	t.Cleanup(func() { reg.UnregisterClient(auth.ID) })
@@ -2212,7 +2226,7 @@ func TestManager_Execute_GenericRouteNotFoundStillSuspendsModel(t *testing.T) {
 		t.Fatalf("register auth: %v", errRegister)
 	}
 
-	if _, errExecute := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{}); errExecute == nil {
+	if _, errExecute := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{}); errExecute == nil {
 		t.Fatal("expected messages route 404")
 	}
 

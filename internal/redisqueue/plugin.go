@@ -8,6 +8,7 @@ import (
 	"time"
 
 	internallogging "github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
+	coresession "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/session"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 )
 
@@ -65,6 +66,19 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 	}
 	responseServiceTier := strings.TrimSpace(record.ResponseServiceTier)
 	clientRequestMetadata := internallogging.GetClientRequestMetadata(ctx)
+	sessionID := strings.TrimSpace(record.SessionID)
+	parentSessionID := strings.TrimSpace(record.ParentSessionID)
+	if sessionID == "" {
+		sessionID = strings.TrimSpace(clientRequestMetadata.SessionID)
+		parentSessionID = strings.TrimSpace(clientRequestMetadata.ParentSessionID)
+	} else if parentSessionID == "" && sessionID == strings.TrimSpace(clientRequestMetadata.SessionID) {
+		parentSessionID = strings.TrimSpace(clientRequestMetadata.ParentSessionID)
+	}
+	sessionID = coresession.NormalizeToCanonicalUUID(sessionID)
+	parentSessionID = coresession.NormalizeToCanonicalUUID(parentSessionID)
+	if sessionID == "" || sessionID == parentSessionID {
+		parentSessionID = ""
+	}
 
 	usageDetail := coreusage.EnsureTokenBreakdownForProvider(record.Detail, record.Provider, record.ExecutorType)
 	tokens := tokenStats{
@@ -75,6 +89,8 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 		CacheReadTokens:        usageDetail.CacheReadTokens,
 		CacheReadTokensPresent: true,
 		CacheCreationTokens:    usageDetail.CacheCreationTokens,
+		CacheCreation5mTokens:  usageDetail.CacheCreation5mTokens,
+		CacheCreation1hTokens:  usageDetail.CacheCreation1hTokens,
 		TotalTokens:            usageDetail.TotalTokens,
 	}
 
@@ -119,6 +135,8 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 		AuthType:            authType,
 		APIKey:              apiKey,
 		RequestID:           requestID,
+		SessionID:           sessionID,
+		ParentSessionID:     parentSessionID,
 		ReasoningEffort:     reasoningEffort,
 		ServiceTier:         serviceTier,
 		ResponseServiceTier: responseServiceTier,
@@ -141,6 +159,8 @@ type queuedUsageDetail struct {
 	AuthType            string                   `json:"auth_type"`
 	APIKey              string                   `json:"api_key"`
 	RequestID           string                   `json:"request_id"`
+	SessionID           string                   `json:"session_id,omitempty"`
+	ParentSessionID     string                   `json:"parent_session_id,omitempty"`
 	ReasoningEffort     string                   `json:"reasoning_effort"`
 	ServiceTier         string                   `json:"service_tier"`
 	ResponseServiceTier string                   `json:"response_service_tier,omitempty"`
@@ -172,6 +192,8 @@ type tokenStats struct {
 	CacheReadTokens        int64 `json:"cache_read_tokens"`
 	CacheReadTokensPresent bool  `json:"cache_read_tokens_present"`
 	CacheCreationTokens    int64 `json:"cache_creation_tokens"`
+	CacheCreation5mTokens  int64 `json:"cache_creation_5m_tokens,omitempty"`
+	CacheCreation1hTokens  int64 `json:"cache_creation_1h_tokens,omitempty"`
 	TotalTokens            int64 `json:"total_tokens"`
 }
 

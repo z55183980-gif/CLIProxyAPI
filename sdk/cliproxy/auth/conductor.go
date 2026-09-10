@@ -119,6 +119,13 @@ type Manager struct {
 	selector                  Selector
 	hook                      Hook
 	mu                        sync.RWMutex
+	capacityMu                sync.Mutex
+	activeRequests            map[string]int
+	sub2apiStorm              sub2apiStorm
+	sub2apiOAuth429           sync.Map
+	sub2apiTeamFailures       sync.Map
+	sub2apiTransient          sub2apiTransientState
+	sub2apiForbidden          sub2apiForbiddenState
 	selectorMu                sync.Mutex
 	configCooldownMu          sync.Mutex
 	auths                     map[string]*Auth
@@ -168,6 +175,8 @@ type Manager struct {
 	// refreshLocks serializes credential refresh per auth ID so concurrent
 	// 401 recoveries and auto-refresh workers do not race the same refresh_token.
 	refreshLocks sync.Map
+	// persistLocks serializes disk persistence per auth ID and guards against out-of-order writes.
+	persistLocks sync.Map
 }
 
 // NewManager constructs a manager with optional custom selector and hook.

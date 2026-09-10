@@ -7,6 +7,10 @@ package config
 // Config represents the application's configuration, loaded from a YAML file.
 type Config struct {
 	SDKConfig `yaml:",inline"`
+	// MaxAccountSwitches bounds Claude/Codex failover; non-positive values use sub2api's default of 10.
+	MaxAccountSwitches int `yaml:"max-account-switches" json:"max-account-switches"`
+	// FailoverOn400 enables Claude compatibility-error failover, as in sub2api.
+	FailoverOn400 bool `yaml:"failover-on-400" json:"failover-on-400"`
 	// Host is the network host/interface on which the API server will bind.
 	// Default is empty ("") to bind all interfaces (IPv4 + IPv6). Use "127.0.0.1" or "localhost" for local-only access.
 	Host string `yaml:"host" json:"-"`
@@ -56,10 +60,6 @@ type Config struct {
 
 	// UsageStatisticsEnabled toggles in-memory usage aggregation; when false, usage data is discarded.
 	UsageStatisticsEnabled bool `yaml:"usage-statistics-enabled" json:"usage-statistics-enabled"`
-
-	// Pricing configures optional token pricing and durable billing. It is
-	// independent from UsageStatisticsEnabled and disabled by default.
-	Pricing PricingConfig `yaml:"pricing" json:"pricing"`
 
 	// RedisUsageQueueRetentionSeconds controls how long usage queue items are retained
 	// in memory for Management API consumers.

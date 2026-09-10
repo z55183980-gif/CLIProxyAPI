@@ -518,7 +518,7 @@ func TestClaudeExecutor_AuthManager_CredentialScopeBlocksAllModelsAndAliases(t *
 	}
 }
 
-func TestClaudeExecutor_AuthManager_OrdinaryModel429DoesNotBlockSiblingModels(t *testing.T) {
+func TestClaudeExecutor_AuthManager_Ordinary429UsesAccountFallbackCooldown(t *testing.T) {
 	var attemptsSonnet atomic.Int32
 	var attemptsOpus atomic.Int32
 
@@ -583,20 +583,19 @@ func TestClaudeExecutor_AuthManager_OrdinaryModel429DoesNotBlockSiblingModels(t 
 		t.Fatalf("sonnet attempts = %d, want 1", attemptsSonnet.Load())
 	}
 
-	// 2. Request on opus MUST succeed on the same credential (not blocked by ordinary model-level 429)
+	// sub2api applies the five-second account fallback when no reset is provided.
 	payloadOpus := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"hi opus"}]}]}`)
-	respOpus, errOpus := manager.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{
+	_, errOpus := manager.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{
 		Model:   "claude-3-opus-20240229",
 		Payload: payloadOpus,
 	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude})
-	if errOpus != nil {
-		t.Fatalf("expected opus to succeed on same credential, got error: %v", errOpus)
+	if errOpus == nil || attemptsOpus.Load() != 0 {
+		t.Fatalf("sibling must respect account cooldown: err=%v attempts=%d", errOpus, attemptsOpus.Load())
 	}
-	if len(respOpus.Payload) == 0 {
-		t.Fatal("expected non-empty response for opus")
-	}
-	if attemptsOpus.Load() != 1 {
-		t.Fatalf("opus attempts = %d, want 1", attemptsOpus.Load())
+	current, _ := manager.GetByID(auth.ID)
+	remaining := time.Until(current.NextRetryAfter)
+	if remaining <= 0 || remaining > 5*time.Second {
+		t.Fatalf("fallback cooldown=%v", remaining)
 	}
 }
 

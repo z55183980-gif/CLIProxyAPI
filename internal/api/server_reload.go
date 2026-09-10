@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/access"
@@ -11,6 +12,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/managementasset"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/redisqueue"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -111,6 +113,10 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
 
 	applySignatureCacheConfig(oldCfg, cfg)
 
+	if oldCfg != nil && !reflect.DeepEqual(oldCfg.Antigravity.ConnectionPool, cfg.Antigravity.ConnectionPool) {
+		executor.ResetAntigravityTransports()
+	}
+
 	if s.handlers != nil && s.handlers.AuthManager != nil {
 		s.handlers.AuthManager.SetRetryConfig(cfg.RequestRetry, time.Duration(cfg.MaxRetryInterval)*time.Second, cfg.MaxRetryCredentials)
 	}
@@ -162,6 +168,11 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
 		s.exampleAPIKeySafeModeActive.Store(exampleAPIKeySafeModeRequired)
 	}
 	s.cfg = cfg
+	if s.codexLiveHandler != nil {
+		if errUpdate := s.codexLiveHandler.UpdateConfig(cfg); errUpdate != nil {
+			log.WithError(errUpdate).Error("failed to update Codex Live media relay configuration")
+		}
+	}
 	s.wsAuthEnabled.Store(cfg.WebsocketAuth)
 	if oldCfg != nil && s.wsAuthChanged != nil && oldCfg.WebsocketAuth != cfg.WebsocketAuth {
 		s.wsAuthChanged(oldCfg.WebsocketAuth, cfg.WebsocketAuth)

@@ -55,13 +55,13 @@ import { getSidebarShortcutLabel, isSidebarToggleShortcut } from '@/utils/sideba
 import type { Theme } from '@/types';
 
 const sidebarIcons: Record<string, ReactNode> = {
+  proxies: <IconNetwork size={18} />,
   dashboard: <IconSidebarDashboard size={18} />,
   quickStart: <IconSidebarQuickStart size={18} />,
   aiProviders: <IconSidebarProviders size={18} />,
   authFiles: <IconSidebarAuthFiles size={18} />,
   oauth: <IconSidebarOauth size={18} />,
   quota: <IconSidebarQuota size={18} />,
-  proxies: <IconNetwork size={18} />,
   plugins: <IconSidebarPlugins size={18} />,
   pluginStore: <IconSidebarStore size={18} />,
   config: <IconSidebarConfig size={18} />,
@@ -605,6 +605,7 @@ export function MainLayout() {
           metaKey: 'nav_meta.dashboard',
           icon: sidebarIcons.dashboard,
         },
+        { path: '/usage', labelKey: 'nav.usage', metaKey: 'nav_meta.usage', icon: sidebarIcons.logs },
         ...(!isApiKeyFunConfigured ? [quickStartNavItem] : []),
       ],
     },
@@ -649,9 +650,9 @@ export function MainLayout() {
       labelKey: 'nav_groups.observe',
       items: [
         {
-          path: '/accounts',
-          labelKey: 'nav.accounts',
-          metaKey: 'nav_meta.accounts',
+          path: '/quota',
+          labelKey: 'nav.quota_management',
+          metaKey: 'nav_meta.quota_management',
           icon: sidebarIcons.quota,
         },
         {

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { Select } from '@/components/ui/Select';
 import { proxiesApi, type ProxyAccount } from '@/services/api/proxies';
 import { useManagementData } from './useManagementData';
 import styles from './Management.module.scss';
@@ -42,16 +43,19 @@ export function ProxiesPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
+  const [now, setNow] = useState(Date.now);
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
+    const timer = window.setInterval(() => setNow(Date.now()), 10000);
     return () => {
       mounted.current = false;
+      window.clearInterval(timer);
     };
   }, []);
   const label = (key: string) => t(`management.${key}`);
   const effectiveStatus = (p: ProxyAccount) =>
-    p.expiresAt && Date.parse(p.expiresAt) <= Date.now() ? 'expired' : p.status;
+    p.expiresAt && Date.parse(p.expiresAt) <= now ? 'expired' : p.status;
   const rows = data.filter(
     (p) =>
       (protocol === 'all' || p.protocol === protocol) &&
@@ -102,17 +106,15 @@ export function ProxiesPage() {
   const select = (key: 'protocol' | 'status' | 'fallbackMode', options: string[]) => (
     <label>
       {label(key)}
-      <select
-        className="input"
+      <Select
+        ariaLabel={label(key)}
         value={String(editor?.[key])}
-        onChange={(e) => field(key, e.target.value)}
-      >
-        {options.map((v) => (
-          <option key={v} value={v}>
-            {key === 'protocol' ? v : label(v)}
-          </option>
-        ))}
-      </select>
+        onChange={(value) => field(key, value)}
+        options={options.map((value) => ({
+          value,
+          label: key === 'protocol' ? value : label(value),
+        }))}
+      />
     </label>
   );
 
@@ -134,30 +136,28 @@ export function ProxiesPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select
-          className="input"
-          aria-label={label('protocol')}
+        <Select
+          className={styles.filterSelect}
+          fullWidth={false}
+          ariaLabel={label('protocol')}
           value={protocol}
-          onChange={(e) => setProtocol(e.target.value)}
-        >
-          {['all', 'http', 'https', 'socks5', 'socks5h'].map((v) => (
-            <option key={v} value={v}>
-              {v === 'all' ? label('allProtocols') : v}
-            </option>
-          ))}
-        </select>
-        <select
-          className="input"
-          aria-label={label('status')}
+          onChange={setProtocol}
+          options={['all', 'http', 'https', 'socks5', 'socks5h'].map((value) => ({
+            value,
+            label: value === 'all' ? label('allProtocols') : value,
+          }))}
+        />
+        <Select
+          className={styles.filterSelect}
+          fullWidth={false}
+          ariaLabel={label('status')}
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
-        >
-          {['all', 'active', 'inactive', 'expired'].map((v) => (
-            <option key={v} value={v}>
-              {label(v)}
-            </option>
-          ))}
-        </select>
+          onChange={setStatus}
+          options={['all', 'active', 'inactive', 'expired'].map((value) => ({
+            value,
+            label: label(value),
+          }))}
+        />
         <Button variant="secondary" loading={loading} onClick={() => void refresh()}>
           {label('refresh')}
         </Button>
@@ -373,22 +373,19 @@ export function ProxiesPage() {
             {select('fallbackMode', ['none', 'direct', 'proxy'])}
             <label>
               {label('backupProxyId')}
-              <select
-                className="input"
+              <Select
+                ariaLabel={label('backupProxyId')}
                 value={editor.backupProxyId}
                 required={editor.fallbackMode === 'proxy'}
                 disabled={editor.fallbackMode !== 'proxy'}
-                onChange={(e) => field('backupProxyId', e.target.value)}
-              >
-                <option value="">—</option>
-                {data
-                  .filter((p) => p.id !== editor.id)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-              </select>
+                onChange={(value) => field('backupProxyId', value)}
+                options={[
+                  { value: '', label: '—' },
+                  ...data
+                    .filter((p) => p.id !== editor.id)
+                    .map((p) => ({ value: p.id, label: p.name })),
+                ]}
+              />
             </label>
             <Input
               label={label('expiryWarnDays')}

@@ -125,122 +125,6 @@ error-logs-max-files: 10
 # When false, disable in-memory usage statistics aggregation
 usage-statistics-enabled: false
 
-# Optional token pricing and durable billing (disabled by default).
-# Set database-dsn-env to the name of an environment variable containing a
-# PostgreSQL DSN. Pricing is independent from usage-statistics-enabled.
-pricing:
-  enabled: false
-  database-dsn-env: CPA_PRICING_DATABASE_DSN
-  database-table: billing_ledger
-  revision: "anthropic-2026-09"
-  rate-multiplier: 1
-  # Official Anthropic API list prices (September 2026), expressed in USD per
-  # token. Source: https://docs.anthropic.com/en/docs/about-claude/pricing
-  # Cache writes use the 5-minute TTL price because the usage record currently
-  # does not carry the cache TTL (Anthropic also offers a 1-hour write price).
-  # Update the revision and rules when Anthropic changes prices.
-  # Fable/Mythos 5.1 cache hits are 0.025x input; other listed models use 0.1x.
-  rules:
-    # Fable/Mythos 5.1: $10/$50 per MTok, cache hit $0.25 per MTok.
-    - model: "claude-fable-5-1*"
-      input-per-token: 0.000010
-      output-per-token: 0.000050
-      cache-read-per-token: 0.00000025
-      cache-write-per-token: 0.0000125
-    - model: "claude-mythos-5-1*"
-      input-per-token: 0.000010
-      output-per-token: 0.000050
-      cache-read-per-token: 0.00000025
-      cache-write-per-token: 0.0000125
-    # Fable/Mythos 5: $10/$50 per MTok, cache hit $1 per MTok.
-    - model: "claude-fable-5*"
-      input-per-token: 0.000010
-      output-per-token: 0.000050
-      cache-read-per-token: 0.000001
-      cache-write-per-token: 0.0000125
-    - model: "claude-mythos-5*"
-      input-per-token: 0.000010
-      output-per-token: 0.000050
-      cache-read-per-token: 0.000001
-      cache-write-per-token: 0.0000125
-    # Opus 5 and 4.5-4.8: $5/$25 per MTok, cache hit $0.50 per MTok.
-    - model: "claude-opus-5*"
-      input-per-token: 0.000005
-      output-per-token: 0.000025
-      cache-read-per-token: 0.0000005
-      cache-write-per-token: 0.00000625
-    - model: "claude-opus-4-8*"
-      input-per-token: 0.000005
-      output-per-token: 0.000025
-      cache-read-per-token: 0.0000005
-      cache-write-per-token: 0.00000625
-    - model: "claude-opus-4-7*"
-      input-per-token: 0.000005
-      output-per-token: 0.000025
-      cache-read-per-token: 0.0000005
-      cache-write-per-token: 0.00000625
-    - model: "claude-opus-4-6*"
-      input-per-token: 0.000005
-      output-per-token: 0.000025
-      cache-read-per-token: 0.0000005
-      cache-write-per-token: 0.00000625
-    - model: "claude-opus-4-5*"
-      input-per-token: 0.000005
-      output-per-token: 0.000025
-      cache-read-per-token: 0.0000005
-      cache-write-per-token: 0.00000625
-    # Opus 4 and 4.1: $15/$75 per MTok, cache hit $1.50 per MTok.
-    - model: "claude-opus-4-1*"
-      input-per-token: 0.000015
-      output-per-token: 0.000075
-      cache-read-per-token: 0.0000015
-      cache-write-per-token: 0.00001875
-    - model: "claude-opus-4*"
-      input-per-token: 0.000015
-      output-per-token: 0.000075
-      cache-read-per-token: 0.0000015
-      cache-write-per-token: 0.00001875
-    # Sonnet 5: $2/$10 per MTok, cache hit $0.20 per MTok.
-    - model: "claude-sonnet-5*"
-      input-per-token: 0.000002
-      output-per-token: 0.000010
-      cache-read-per-token: 0.0000002
-      cache-write-per-token: 0.0000025
-    # Sonnet 4-4.6: $3/$15 per MTok, cache hit $0.30 per MTok.
-    - model: "claude-sonnet-4-6*"
-      input-per-token: 0.000003
-      output-per-token: 0.000015
-      cache-read-per-token: 0.0000003
-      cache-write-per-token: 0.00000375
-    - model: "claude-sonnet-4-5*"
-      input-per-token: 0.000003
-      output-per-token: 0.000015
-      cache-read-per-token: 0.0000003
-      cache-write-per-token: 0.00000375
-    - model: "claude-sonnet-4*"
-      input-per-token: 0.000003
-      output-per-token: 0.000015
-      cache-read-per-token: 0.0000003
-      cache-write-per-token: 0.00000375
-    # Haiku 4.5: $1/$5 per MTok, cache hit $0.10 per MTok.
-    - model: "claude-haiku-4-5*"
-      input-per-token: 0.000001
-      output-per-token: 0.000005
-      cache-read-per-token: 0.0000001
-      cache-write-per-token: 0.00000125
-    # Haiku 3.5: $0.80/$4 per MTok, cache hit $0.08 per MTok.
-    - model: "claude-haiku-3-5*"
-      input-per-token: 0.0000008
-      output-per-token: 0.000004
-      cache-read-per-token: 0.00000008
-      cache-write-per-token: 0.000001
-
-# Claude credentials are tried in round-robin order when an upstream request
-# fails. Enable extra retry rounds for transient failures and exhausted keys.
-# request-retry: 2
-# max-retry-credentials: 0
-# max-retry-interval: 30
-
 # How long (in seconds) usage queue items are retained in memory for the Management API.
 # The local Redis RESP usage output is disabled.
 # Default: 60. Max: 3600.
@@ -267,7 +151,13 @@ passthrough-headers: false
 # Additional rounds apply to HTTP 403, 408, 429, 500, 502, 503, and 504 failures.
 # Individual credential/provider overrides take precedence; 0 disables additional
 # rounds, while an omitted or negative override inherits this global setting.
+# Local Claude/Codex generation uses the sub2api flow below instead of these legacy rounds.
 request-retry: 3
+
+# Claude/Codex: maximum account switches (initial attempt is additional); <=0 uses 10.
+max-account-switches: 10
+# Claude: allow compatible beta/thinking/tool HTTP 400 errors to switch accounts.
+failover-on-400: false
 
 # Maximum number of different credentials to try in each credential retry round
 # after per-credential round filtering. Set to 0 to try all available
@@ -416,6 +306,10 @@ codex:
 #   sensitive-words:             # optional: words to obfuscate with zero-width characters in system instructions
 #     - "API"
 #     - "proxy"
+#   connection-pool:             # optional: upstream HTTP connection pool settings
+#     enabled: false             # whether to enable connection pooling (default: false; set to true to enable connection pooling)
+#     idle-conn-timeout: "30s"   # idle keep-alive timeout (default: 30s, capped at 210s)
+#     max-idle-conns-per-host: 2 # max idle connections per host per credential (default: 2)
 
 # xAI provider behavior.
 xai:
@@ -704,7 +598,8 @@ nonstream-keepalive-interval: 0
 # Anthropic-Beta is assembled per request rather than sent as a fixed list, matching
 # Claude Code: context-1m sits right after claude-code, mid-conversation-system
 # is added only for models that accept a role=system turn, advanced-tool-use only when
-# the request declares tools, and server-side-fallback / fallback-credit /
+# the request uses tool search (deferred tools) or another advanced tool-use feature,
+# afk-mode sits between fast-mode and extended-cache-ttl, and server-side-fallback / fallback-credit /
 # structured-outputs trail effort. On direct api.anthropic.com a caller may only ask for
 # betas real Claude Code also sends, and they are placed at their observed positions;
 # anything else is dropped so the outgoing set stays one a real client could produce.
@@ -965,6 +860,11 @@ nonstream-keepalive-interval: 0
 #           protocol: "codex" # restricts the rule to a specific protocol, options: openai, gemini, claude, codex, antigravity
 #       params: # JSON path (gjson/sjson syntax) -> value
 #         "reasoning.effort": "high"
+#     - models:
+#         - name: "claude-fable-5-1"
+#           protocol: "claude"
+#       params:
+#         max_tokens: 128000 # override the final Claude Messages output budget after protocol translation
 #   override-raw: # Override raw rules always set parameters using raw JSON (must be valid JSON).
 #     - models:
 #         - name: "gpt-*" # Supports wildcards (e.g., "gpt-*")

@@ -64,6 +64,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/proxy-url", s.mgmt.PutProxyURL)
 		mgmt.PATCH("/proxy-url", s.mgmt.PutProxyURL)
 		mgmt.DELETE("/proxy-url", s.mgmt.DeleteProxyURL)
+
 		mgmt.GET("/proxy-accounts", s.mgmt.ListProxyAccounts)
 		mgmt.POST("/proxy-accounts", s.mgmt.CreateProxyAccount)
 		mgmt.POST("/proxy-accounts/batch", s.mgmt.CreateProxyAccountsBatch)
@@ -92,7 +93,12 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/api-keys", s.mgmt.DeleteAPIKeys)
 		mgmt.GET("/api-key-usage", s.mgmt.GetAPIKeyUsage)
 		mgmt.GET("/usage-queue", s.mgmt.GetUsageQueue)
-		mgmt.GET("/billing-usage", s.getBillingUsage)
+		mgmt.GET("/usage-history", s.mgmt.GetUsageHistory)
+		mgmt.GET("/usage-history/options", s.mgmt.GetUsageHistoryOptions)
+		mgmt.POST("/usage-history/accounts/today", s.mgmt.PostAccountTodayStats)
+		mgmt.DELETE("/usage-history", s.mgmt.DeleteUsageHistory)
+		mgmt.GET("/usage-prices", s.mgmt.GetUsagePrices)
+		mgmt.PUT("/usage-prices", s.mgmt.PutUsagePrices)
 
 		mgmt.GET("/gemini-api-key", s.mgmt.GetGeminiKeys)
 		mgmt.PUT("/gemini-api-key", s.mgmt.PutGeminiKeys)
@@ -176,14 +182,20 @@ func (s *Server) registerManagementRoutes() {
 
 		mgmt.GET("/auth-files", s.mgmt.ListAuthFiles)
 		mgmt.GET("/auth-files/models", s.mgmt.GetAuthFileModels)
+		mgmt.GET("/auth-files/usage-windows", s.mgmt.GetAccountUsageWindows)
 		mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
 		mgmt.GET("/auth-files/download", s.mgmt.DownloadAuthFile)
 		mgmt.POST("/auth-files", s.mgmt.UploadAuthFile)
 		mgmt.DELETE("/auth-files", s.mgmt.DeleteAuthFile)
 		mgmt.PATCH("/auth-files/status", s.mgmt.PatchAuthFileStatus)
 		mgmt.PATCH("/auth-files/fields", s.mgmt.PatchAuthFileFields)
+		mgmt.POST("/vertex/import", s.mgmt.ImportVertexCredential)
 
 		mgmt.GET("/anthropic-auth-url", s.mgmt.RequestAnthropicToken)
+		mgmt.GET("/codex-auth-url", s.mgmt.RequestCodexToken)
+		mgmt.GET("/antigravity-auth-url", s.mgmt.RequestAntigravityToken)
+		mgmt.GET("/kimi-auth-url", s.mgmt.RequestKimiToken)
+		mgmt.GET("/xai-auth-url", s.mgmt.RequestXAIToken)
 		mgmt.GET("/get-auth-status", s.mgmt.GetAuthStatus)
 		mgmt.DELETE("/oauth-session", s.mgmt.CancelAuthSession)
 	}
@@ -322,11 +334,5 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
-	data, errRead := os.ReadFile(filePath)
-	if errRead != nil {
-		log.WithError(errRead).Error("failed to read management control panel asset")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+	c.File(filePath)
 }

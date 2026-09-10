@@ -129,7 +129,11 @@ func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxye
 		return resp, unwrapExecutionBoundaryError(errHome)
 	}
 
+	ctx = m.withSub2APIFailover(ctx, normalized)
 	defaultRequestRetry, maxRetryCredentials, maxWait := m.retrySettings()
+	if sub2apiState(ctx) != nil {
+		maxRetryCredentials = 0
+	}
 
 	var lastErr error
 	var preferredUpstreamErr error
@@ -164,6 +168,13 @@ func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxye
 		}
 		lastErr = preferredExecutionAttemptError(lastErr, preferredUpstreamErr)
 		lastErr = unwrapExecutionBoundaryError(lastErr)
+		if hasAntigravityProvider(normalized) && shouldAttemptAntigravityCreditsFallback(m, lastErr, normalized) {
+			if resp, ok, errCredits := m.tryAntigravityCreditsExecute(ctx, req, opts); errCredits != nil {
+				return cliproxyexecutor.Response{}, errCredits
+			} else if ok {
+				return resp, nil
+			}
+		}
 		return cliproxyexecutor.Response{}, lastErr
 	}
 	return cliproxyexecutor.Response{}, &Error{Code: "auth_not_found", Message: "no auth available"}
@@ -234,7 +245,11 @@ func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req cli
 		return nil, &Error{Code: "provider_not_found", Message: "no provider supplied"}
 	}
 
+	ctx = m.withSub2APIFailover(ctx, normalized)
 	defaultRequestRetry, maxRetryCredentials, maxWait := m.retrySettings()
+	if sub2apiState(ctx) != nil {
+		maxRetryCredentials = 0
+	}
 
 	var lastErr error
 	var preferredUpstreamErr error
@@ -292,6 +307,13 @@ func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req cli
 			lastErr = preferredExecutionAttemptError(lastErr, preferredUpstreamErr)
 		}
 		lastErr = unwrapExecutionBoundaryError(lastErr)
+		if hasAntigravityProvider(normalized) && shouldAttemptAntigravityCreditsFallback(m, lastErr, normalized) {
+			if result, ok, errCredits := m.tryAntigravityCreditsExecuteStream(ctx, req, opts); errCredits != nil {
+				return nil, errCredits
+			} else if ok {
+				return result, nil
+			}
+		}
 		var bootstrapErr *streamBootstrapError
 		if errors.As(lastErr, &bootstrapErr) && bootstrapErr != nil {
 			return streamErrorResult(bootstrapErr.Headers(), lastErr), nil
@@ -335,6 +357,38 @@ func applyRequestAfterAuthInterceptor(ctx context.Context, executor ProviderExec
 			HTTPStatus: resp.StatusCode,
 			Header:     cloneRequestHeaders(resp.ResponseHeaders),
 			Body:       bytes.Clone(resp.ResponseBody),
+		}
+	}
+	if len(resp.ClearHeaders) > 0 || len(resp.Body) > 0 {
+		evalPayload := opts.OriginalRequest
+		if len(evalPayload) == 0 {
+			evalPayload = req.Payload
+		}
+		info, ok := cliproxysession.ExtractSessionInfo(opts.Headers, evalPayload, opts.Metadata)
+		if ok && info.SessionID != "" {
+			if opts.Metadata == nil {
+				opts.Metadata = make(map[string]any, 2)
+			}
+			opts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey] = cliproxysession.BoundSessionIdentity(info.SessionID)
+			if info.ParentSessionID != "" && info.ParentSessionID != info.SessionID {
+				opts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey] = cliproxysession.BoundSessionIdentity(info.ParentSessionID)
+			} else {
+				delete(opts.Metadata, cliproxyexecutor.ParentSessionIDMetadataKey)
+			}
+		} else {
+			delete(opts.Metadata, cliproxyexecutor.CanonicalSessionIDMetadataKey)
+			delete(opts.Metadata, cliproxyexecutor.ParentSessionIDMetadataKey)
+			delete(opts.Metadata, cliproxyexecutor.LCPAffinitySessionIDMetadataKey)
+		}
+	} else if len(resp.Headers) > 0 {
+		if info, ok := cliproxysession.ExtractSessionInfo(opts.Headers, nil, opts.Metadata); ok && info.SessionID != "" {
+			if opts.Metadata == nil {
+				opts.Metadata = make(map[string]any, 2)
+			}
+			opts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey] = cliproxysession.BoundSessionIdentity(info.SessionID)
+			if info.ParentSessionID != "" && info.ParentSessionID != info.SessionID {
+				opts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey] = cliproxysession.BoundSessionIdentity(info.ParentSessionID)
+			}
 		}
 	}
 	return req, opts, nil
@@ -394,6 +448,11 @@ func mergeRequestHeaders(current, updates http.Header, clear []string) http.Head
 	}
 	for _, key := range clear {
 		out.Del(key)
+		for existingKey := range out {
+			if strings.EqualFold(existingKey, key) {
+				delete(out, existingKey)
+			}
+		}
 	}
 	for key, values := range updates {
 		out.Del(key)
@@ -487,6 +546,21 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 				execReq.Model = executionModel
 			}
 			execOpts := opts
+			if pickOpts.Metadata != nil {
+				if canonicalID, ok := pickOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey]; ok {
+					meta := make(map[string]any, len(execOpts.Metadata)+2)
+					for k, v := range execOpts.Metadata {
+						meta[k] = v
+					}
+					meta[cliproxyexecutor.CanonicalSessionIDMetadataKey] = canonicalID
+					if parentID, okParent := pickOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey]; okParent && parentID != canonicalID {
+						meta[cliproxyexecutor.ParentSessionIDMetadataKey] = parentID
+					} else {
+						delete(meta, cliproxyexecutor.ParentSessionIDMetadataKey)
+					}
+					execOpts.Metadata = meta
+				}
+			}
 			var errIntercept error
 			execReq, execOpts, errIntercept = applyRequestAfterAuthInterceptor(execCtx, executor, provider, execReq, execOpts, requestedModelAliasFromOptions(execOpts, routeModel))
 			if errIntercept != nil {
@@ -495,8 +569,9 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 			if !restoreExecutionModel {
 				execReq = attachResolvedAPIKeyModelInfo(routing, execReq, auth, routeModel, upstreamModel)
 			}
+			execCtx = syncMetadataSessionToContext(execCtx, execOpts.Metadata)
 			startExec := time.Now()
-			resp, errExec := executor.Execute(execCtx, auth, execReq, execOpts)
+			resp, errExec := m.executeWithCapacity(execCtx, executor, auth, execReq, execOpts, false)
 			errExec = markUpstreamExecutionAttemptFromContext(execCtx, errExec)
 			durationExec := time.Since(startExec)
 			if errExec != nil {
@@ -511,8 +586,9 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 					auth = refreshed
 					didRefreshOnUnauthorized = true
 					execCtx = newUpstreamAttemptContext(execCtx)
+					execCtx = syncMetadataSessionToContext(execCtx, execOpts.Metadata)
 					startRetry := time.Now()
-					resp, errExec = executor.Execute(execCtx, auth, execReq, execOpts)
+					resp, errExec = m.executeWithCapacity(execCtx, executor, auth, execReq, execOpts, false)
 					errExec = markUpstreamExecutionAttemptFromContext(execCtx, errExec)
 					durationRetry := time.Since(startRetry)
 					if errExec != nil {
@@ -552,7 +628,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 						return cliproxyexecutor.Response{}, wrapRequestStopError(errExec)
 					}
 					authErr = errExec
-					if result.CredentialScope {
+					if result.CredentialScope || sub2apiFailureFrom(errExec) != nil {
 						break
 					}
 					continue
@@ -561,7 +637,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 					return cliproxyexecutor.Response{}, errExec
 				}
 				authErr = errExec
-				if result.CredentialScope {
+				if result.CredentialScope || sub2apiFailureFrom(errExec) != nil {
 					break
 				}
 				continue
@@ -678,6 +754,21 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 				execReq.Model = executionModel
 			}
 			execOpts := opts
+			if pickOpts.Metadata != nil {
+				if canonicalID, ok := pickOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey]; ok {
+					meta := make(map[string]any, len(execOpts.Metadata)+2)
+					for k, v := range execOpts.Metadata {
+						meta[k] = v
+					}
+					meta[cliproxyexecutor.CanonicalSessionIDMetadataKey] = canonicalID
+					if parentID, okParent := pickOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey]; okParent && parentID != canonicalID {
+						meta[cliproxyexecutor.ParentSessionIDMetadataKey] = parentID
+					} else {
+						delete(meta, cliproxyexecutor.ParentSessionIDMetadataKey)
+					}
+					execOpts.Metadata = meta
+				}
+			}
 			var errIntercept error
 			execReq, execOpts, errIntercept = applyRequestAfterAuthInterceptor(execCtx, executor, provider, execReq, execOpts, requestedModelAliasFromOptions(execOpts, routeModel))
 			if errIntercept != nil {
@@ -686,8 +777,9 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 			if !restoreExecutionModel {
 				execReq = attachResolvedAPIKeyModelInfo(routing, execReq, auth, routeModel, upstreamModel)
 			}
+			execCtx = syncMetadataSessionToContext(execCtx, execOpts.Metadata)
 			startExec := time.Now()
-			resp, errExec := executor.CountTokens(execCtx, auth, execReq, execOpts)
+			resp, errExec := m.executeWithCapacity(execCtx, executor, auth, execReq, execOpts, true)
 			errExec = markUpstreamExecutionAttemptFromContext(execCtx, errExec)
 			durationExec := time.Since(startExec)
 			if errExec != nil {
@@ -702,8 +794,9 @@ func (m *Manager) executeCountMixedOnce(ctx context.Context, providers []string,
 					auth = refreshed
 					didRefreshOnUnauthorized = true
 					execCtx = newUpstreamAttemptContext(execCtx)
+					execCtx = syncMetadataSessionToContext(execCtx, execOpts.Metadata)
 					startRetry := time.Now()
-					resp, errExec = executor.CountTokens(execCtx, auth, execReq, execOpts)
+					resp, errExec = m.executeWithCapacity(execCtx, executor, auth, execReq, execOpts, true)
 					errExec = markUpstreamExecutionAttemptFromContext(execCtx, errExec)
 					durationRetry := time.Since(startRetry)
 					if errExec != nil {
@@ -1015,7 +1108,35 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 		execOpts := opts
 		if selection != nil {
 			execOpts.ExecutionLifecycle = selection
+			if selection.CanonicalSessionID != "" {
+				meta := make(map[string]any, len(execOpts.Metadata)+2)
+				for k, v := range execOpts.Metadata {
+					meta[k] = v
+				}
+				meta[cliproxyexecutor.CanonicalSessionIDMetadataKey] = selection.CanonicalSessionID
+				if selection.ParentSessionID != "" && selection.ParentSessionID != selection.CanonicalSessionID {
+					meta[cliproxyexecutor.ParentSessionIDMetadataKey] = selection.ParentSessionID
+				} else {
+					delete(meta, cliproxyexecutor.ParentSessionIDMetadataKey)
+				}
+				execOpts.Metadata = meta
+			}
+		} else if pickOpts.Metadata != nil {
+			if canonicalID, ok := pickOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey]; ok {
+				meta := make(map[string]any, len(execOpts.Metadata)+2)
+				for k, v := range execOpts.Metadata {
+					meta[k] = v
+				}
+				meta[cliproxyexecutor.CanonicalSessionIDMetadataKey] = canonicalID
+				if parentID, okParent := pickOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey]; okParent && parentID != canonicalID {
+					meta[cliproxyexecutor.ParentSessionIDMetadataKey] = parentID
+				} else {
+					delete(meta, cliproxyexecutor.ParentSessionIDMetadataKey)
+				}
+				execOpts.Metadata = meta
+			}
 		}
+		execCtx = syncMetadataSessionToContext(execCtx, execOpts.Metadata)
 		if homeMode && len(models) > 1 {
 			models = models[:1]
 			pooled = false
@@ -1402,7 +1523,8 @@ func (m *Manager) prepareRequestAuth(ctx context.Context, executor ProviderExecu
 		return target, nil
 	}
 
-	updated, errPrepare := preparer.PrepareRequestAuth(ctx, target)
+	base := target.Clone()
+	updated, errPrepare := preparer.PrepareRequestAuth(ctx, base.Clone())
 	if errPrepare != nil {
 		return auth, errPrepare
 	}
@@ -1410,14 +1532,14 @@ func (m *Manager) prepareRequestAuth(ctx context.Context, executor ProviderExecu
 		return target, nil
 	}
 
-	saved, errUpdate := m.Update(ctx, updated)
+	saved, errUpdate := m.UpdatePreparedAuth(ctx, base, updated)
 	if errUpdate != nil {
-		return updated, errUpdate
+		return nil, errUpdate
 	}
 	if saved != nil {
 		return saved, nil
 	}
-	return updated, nil
+	return target, nil
 }
 
 func contextWithRequestedModelAlias(ctx context.Context, opts cliproxyexecutor.Options, fallback string) context.Context {
@@ -1776,7 +1898,7 @@ func warnLogUpstreamFailure(ctx context.Context, entry *log.Entry, provider, mod
 	if errors.Is(err, context.Canceled) {
 		return
 	}
-	if isRequestInvalidError(err) {
+	if isRequestInvalidError(err) && sub2apiFailureFrom(err) == nil {
 		return
 	}
 	if entry == nil {
@@ -1894,4 +2016,58 @@ func (m *Manager) HttpRequest(ctx context.Context, auth *Auth, req *http.Request
 		return nil, &Error{Code: "provider_not_found", Message: "executor not registered for provider: " + providerKey}
 	}
 	return exec.HttpRequest(ctx, auth, req)
+}
+
+func syncMetadataSessionToContext(ctx context.Context, metadata map[string]any) context.Context {
+	if ctx == nil {
+		return nil
+	}
+	canonicalID := ""
+	if len(metadata) > 0 {
+		canonicalID, _ = metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey].(string)
+		if canonicalID == "" {
+			canonicalID, _ = metadata[cliproxyexecutor.LCPAffinitySessionIDMetadataKey].(string)
+		}
+		if canonicalID == "" {
+			if execID, _ := metadata[cliproxyexecutor.ExecutionSessionMetadataKey].(string); execID != "" {
+				execID = strings.TrimSpace(execID)
+				if !strings.HasPrefix(execID, "execution:") {
+					canonicalID = "execution:" + execID
+				} else {
+					canonicalID = execID
+				}
+			}
+		}
+		if canonicalID == "" {
+			if derivedID, _ := metadata[cliproxyexecutor.DerivedSessionIDMetadataKey].(string); derivedID != "" {
+				derivedID = strings.TrimSpace(derivedID)
+				if !strings.HasPrefix(derivedID, "derived:") {
+					canonicalID = "derived:" + derivedID
+				} else {
+					canonicalID = derivedID
+				}
+			}
+		}
+	}
+	canonicalID = strings.TrimSpace(canonicalID)
+	if canonicalID == "" {
+		clientMeta := logging.GetClientRequestMetadata(ctx)
+		if clientMeta.SessionID != "" || clientMeta.ParentSessionID != "" {
+			clientMeta.SessionID = ""
+			clientMeta.ParentSessionID = ""
+			return logging.WithClientRequestMetadata(ctx, clientMeta)
+		}
+		return ctx
+	}
+	clientMeta := logging.GetClientRequestMetadata(ctx)
+	clientMeta.SessionID = cliproxysession.BoundSessionIdentity(canonicalID)
+	if parentID, ok := metadata[cliproxyexecutor.ParentSessionIDMetadataKey].(string); ok && strings.TrimSpace(parentID) != "" {
+		clientMeta.ParentSessionID = cliproxysession.BoundSessionIdentity(strings.TrimSpace(parentID))
+	} else {
+		clientMeta.ParentSessionID = ""
+	}
+	if clientMeta.SessionID == clientMeta.ParentSessionID {
+		clientMeta.ParentSessionID = ""
+	}
+	return logging.WithClientRequestMetadata(ctx, clientMeta)
 }

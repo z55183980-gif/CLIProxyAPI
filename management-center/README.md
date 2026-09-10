@@ -105,12 +105,10 @@ Check the CLI Proxy API server documentation/config comments for the full authen
 
 ## Internationalization
 
-Currently supports four languages:
+Currently supports two languages:
 
 - English (en)
 - Simplified Chinese (zh-CN)
-- Traditional Chinese (zh-TW)
-- Russian (ru)
 
 The UI language is automatically detected from browser settings and can be manually switched from the login page or header language menu.
 

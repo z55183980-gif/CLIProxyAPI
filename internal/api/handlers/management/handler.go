@@ -58,8 +58,12 @@ type Handler struct {
 	configReloadHook        func(context.Context, *config.Config)
 	pluginStoreRegistryURL  string
 	pluginStoreHTTPClient   pluginstore.HTTPDoer
-	pluginReleaseCacheMu    sync.Mutex
-	pluginReleaseCache      map[string]pluginReleaseCacheEntry
+	pluginStoreRateLimiter  *pluginstore.GitHubRateLimiter
+	pluginReleases          pluginReleaseCache
+	usageWindows            sync.Map
+	usageWindowHTTPClient   interface {
+		Do(*http.Request) (*http.Response, error)
+	}
 }
 
 type configReloadSnapshot struct {
@@ -298,8 +302,8 @@ func (h *Handler) Middleware() gin.HandlerFunc {
 // AuthenticateManagementKey verifies the provided management key for the given client.
 // It mirrors the behaviour of Middleware() so non-HTTP callers can reuse the same logic.
 func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, provided string) (bool, int, string) {
-	const maxFailures = 20
-	const banDuration = 5 * time.Minute
+	const maxFailures = 5
+	const banDuration = 30 * time.Minute
 
 	if h == nil {
 		return false, http.StatusForbidden, "remote management disabled"
@@ -368,9 +372,7 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
 	}
 
 	if provided == "" {
-		// Missing credentials are common during the management UI bootstrap and
-		// must not be treated as a brute-force attempt. Only an explicitly
-		// supplied but invalid credential contributes to the temporary IP ban.
+		fail()
 		return false, http.StatusUnauthorized, "missing management key"
 	}
 

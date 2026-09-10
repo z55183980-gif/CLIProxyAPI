@@ -9,7 +9,7 @@ import {
   type CSSProperties,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { IconChevronDown } from './icons';
+import { IconCheck, IconChevronDown } from './icons';
 import styles from './Select.module.scss';
 
 export interface SelectOption {
@@ -30,6 +30,7 @@ interface SelectProps {
   fullWidth?: boolean;
   size?: 'sm' | 'md';
   id?: string;
+  required?: boolean;
 }
 
 const VIEWPORT_MARGIN = 8;
@@ -89,6 +90,7 @@ export function Select({
   fullWidth = true,
   size = 'md',
   id,
+  required = false,
 }: SelectProps) {
   const generatedId = useId();
   const selectId = id ?? generatedId;
@@ -96,6 +98,8 @@ export function Select({
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const searchRef = useRef({ text: '', time: 0 });
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const [dropdownStyle, setDropdownStyle] = useState<CSSProperties | null>(null);
@@ -103,13 +107,20 @@ export function Select({
 
   useEffect(() => {
     if (!open || disabled) return;
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: PointerEvent) => {
       const target = event.target as Node;
       if (wrapRef.current?.contains(target) || dropdownRef.current?.contains(target)) return;
       setOpen(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside, true);
+    const handleFocusOutside = (event: FocusEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('focusin', handleFocusOutside);
+    return () => {
+      document.removeEventListener('pointerdown', handleClickOutside, true);
+      document.removeEventListener('focusin', handleFocusOutside);
+    };
   }, [disabled, open]);
 
   const updateDropdownStyle = useCallback(() => {
@@ -173,7 +184,7 @@ export function Select({
     [options, value]
   );
   const resolvedHighlightedIndex =
-    highlightedIndex >= 0
+    highlightedIndex >= 0 && highlightedIndex < options.length
       ? highlightedIndex
       : selectedIndex >= 0
         ? selectedIndex
@@ -184,6 +195,12 @@ export function Select({
   const displayText = selected?.label ?? placeholder ?? '';
   const isPlaceholder = !selected && placeholder;
 
+  const openDropdown = useCallback(() => {
+    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : options.length ? 0 : -1);
+    searchRef.current = { text: '', time: 0 };
+    setOpen(true);
+  }, [options.length, selectedIndex]);
+
   const commitSelection = useCallback(
     (nextIndex: number) => {
       const nextOption = options[nextIndex];
@@ -191,6 +208,7 @@ export function Select({
       onChange(nextOption.value);
       setOpen(false);
       setHighlightedIndex(nextIndex);
+      triggerRef.current?.focus({ preventScroll: true });
     },
     [onChange, options]
   );
@@ -212,7 +230,7 @@ export function Select({
         case 'ArrowDown':
           event.preventDefault();
           if (!isOpen) {
-            setOpen(true);
+            openDropdown();
             return;
           }
           moveHighlight(1);
@@ -220,7 +238,7 @@ export function Select({
         case 'ArrowUp':
           event.preventDefault();
           if (!isOpen) {
-            setOpen(true);
+            openDropdown();
             return;
           }
           moveHighlight(-1);
@@ -239,7 +257,7 @@ export function Select({
         case ' ': {
           event.preventDefault();
           if (!isOpen) {
-            setOpen(true);
+            openDropdown();
             return;
           }
           if (resolvedHighlightedIndex >= 0) {
@@ -250,16 +268,43 @@ export function Select({
         case 'Escape':
           if (!isOpen) return;
           event.preventDefault();
+          event.stopPropagation();
           setOpen(false);
           return;
         case 'Tab':
           if (isOpen) setOpen(false);
           return;
         default:
+          if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            const now = Date.now();
+            const previous = now - searchRef.current.time < 700 ? searchRef.current.text : '';
+            const text = `${previous}${event.key}`.toLocaleLowerCase();
+            searchRef.current = { text, time: now };
+            const query = [...text].every((character) => character === text[0]) ? text[0] : text;
+            const start = isOpen ? resolvedHighlightedIndex : selectedIndex;
+            for (let offset = 1; offset <= options.length; offset++) {
+              const index = (start + offset + options.length) % options.length;
+              if (options[index].label.toLocaleLowerCase().startsWith(query)) {
+                event.preventDefault();
+                if (isOpen) setHighlightedIndex(index);
+                else commitSelection(index);
+                break;
+              }
+            }
+          }
           return;
       }
     },
-    [commitSelection, disabled, isOpen, moveHighlight, options.length, resolvedHighlightedIndex]
+    [
+      commitSelection,
+      disabled,
+      isOpen,
+      moveHighlight,
+      openDropdown,
+      options,
+      resolvedHighlightedIndex,
+      selectedIndex,
+    ]
   );
 
   useEffect(() => {
@@ -278,25 +323,29 @@ export function Select({
         id={listboxId}
         role="listbox"
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy ?? (!ariaLabel ? selectId : undefined)}
+        data-direction={dropdownStyle.bottom !== undefined ? 'up' : 'down'}
         style={dropdownStyle}
       >
         {options.map((opt, index) => {
           const active = opt.value === value;
           const highlighted = index === resolvedHighlightedIndex;
           return (
-            <button
+            <div
               key={opt.value}
               id={`${selectId}-option-${index}`}
-              type="button"
               role="option"
               aria-selected={active}
               className={`${styles.option} ${active ? styles.optionActive : ''} ${highlighted ? styles.optionHighlighted : ''}`.trim()}
               onMouseEnter={() => setHighlightedIndex(index)}
-              onKeyDown={handleKeyDown}
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => commitSelection(index)}
             >
-              {opt.label}
-            </button>
+              <span className={styles.optionLabel}>{opt.label}</span>
+              <span className={styles.optionCheck} aria-hidden="true">
+                {active && <IconCheck size={15} />}
+              </span>
+            </div>
           );
         })}
       </div>
@@ -309,11 +358,15 @@ export function Select({
         ref={wrapRef}
       >
         <button
+          ref={triggerRef}
           id={selectId}
           type="button"
           className={`${styles.trigger} ${size === 'sm' ? styles.triggerSm : ''}`.trim()}
-          onClick={disabled ? undefined : () => setOpen((prev) => !prev)}
+          onClick={disabled ? undefined : () => (isOpen ? setOpen(false) : openDropdown())}
           onKeyDown={handleKeyDown}
+          role="combobox"
+          aria-autocomplete="none"
+          aria-required={required || undefined}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
           aria-controls={isOpen ? listboxId : undefined}
@@ -334,6 +387,22 @@ export function Select({
             <IconChevronDown size={14} />
           </span>
         </button>
+        {required && (
+          <input
+            className={styles.validationInput}
+            value={selected?.value ?? ''}
+            required
+            disabled={disabled}
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={() => {}}
+            onInvalid={(event) => {
+              event.preventDefault();
+              triggerRef.current?.focus();
+              openDropdown();
+            }}
+          />
+        )}
       </div>
       {dropdown &&
         (typeof document === 'undefined' ? dropdown : createPortal(dropdown, document.body))}

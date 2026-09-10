@@ -189,7 +189,7 @@
       line-height: 0;
     }
 
-    &:hover {
+    &:hover:not(:disabled) {
       background: color-mix(in srgb, var(--text-primary) 8%, transparent);
       color: var(--text-primary);
       border-color: transparent;

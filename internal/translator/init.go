@@ -1,22 +1,35 @@
-// Package translator wires the built-in request/response translators into the
-// SDK translator registry via package init side effects.
-//
-// The leaf package path reads <upstream>/<client-format>. Keep the client
-// formats supported by Claude and the generic OpenAI-compatible executor.
 package translator
 
 import (
-	// Claude upstream, Gemini-shaped client surface.
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/claude/gemini"
-	// Claude upstream, Interactions-shaped client surface.
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/claude/interactions"
-	// Claude upstream, OpenAI chat-completions client surface.
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/claude/openai/chat-completions"
-	// Claude upstream, OpenAI responses client surface.
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/claude/openai/responses"
-	// Generic OpenAI-compatible upstream, Claude-shaped client surface.
+
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/codex/claude"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/codex/gemini"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/codex/interactions"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/codex/openai/chat-completions"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/codex/openai/responses"
+
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/gemini/claude"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/gemini/gemini"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/gemini/interactions"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/gemini/openai/chat-completions"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/gemini/openai/responses"
+
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/interactions/claude"
+
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/openai/claude"
-	// Generic OpenAI-compatible upstream, OpenAI client surfaces.
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/openai/gemini"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/openai/interactions/chat-completions"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/openai/interactions/responses"
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/openai/openai/chat-completions"
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/openai/openai/responses"
+
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/antigravity/claude"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/antigravity/gemini"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/antigravity/interactions"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/antigravity/openai/chat-completions"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator/antigravity/openai/responses"
 )

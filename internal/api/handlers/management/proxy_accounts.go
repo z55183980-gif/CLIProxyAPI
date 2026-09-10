@@ -1,7 +1,6 @@
 package management
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -252,10 +251,8 @@ func (h *Handler) TestProxyAccount(c *gin.Context) {
 	if testURL == "" {
 		testURL = "https://ipinfo.io/json"
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
-	defer cancel()
 	started := time.Now()
-	req, errRequest := http.NewRequestWithContext(ctx, http.MethodGet, testURL, nil)
+	req, errRequest := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, testURL, nil)
 	if errRequest != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errRequest.Error()})
 		return

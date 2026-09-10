@@ -15,7 +15,7 @@ import type { ApiError } from '@/types';
 import styles from './LoginPage.module.scss';
 
 /**
- * 将 API 错误转换为本地化的用户友好消息
+ * Map API errors to localized messages.
  */
 type RedirectState = { from?: { pathname?: string } };
 
@@ -47,7 +47,7 @@ function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): s
     return `HTTP ${status}: ${summary}${backendDetail}`;
   };
 
-  // 根据 HTTP 状态码判断
+  // Handle HTTP status codes.
   if (status === 401) {
     return withHttpStatus(t('login.error_unauthorized'));
   }
@@ -61,7 +61,7 @@ function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): s
     return withHttpStatus(t('login.error_server'));
   }
 
-  // 根据 axios 错误码判断
+  // Handle Axios error codes.
   if (code === 'ECONNABORTED' || message.toLowerCase().includes('timeout')) {
     return t('login.error_timeout');
   }
@@ -72,12 +72,12 @@ function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): s
     return t('login.error_ssl');
   }
 
-  // 检查 CORS 错误
+  // Handle CORS errors.
   if (message.toLowerCase().includes('cors') || message.toLowerCase().includes('cross-origin')) {
     return t('login.error_cors');
   }
 
-  // 默认错误消息
+  // Use the default error message.
   return withHttpStatus(t('login.error_invalid'));
 }
 
@@ -130,7 +130,7 @@ export function LoginPage() {
         const autoLoggedIn = await restoreSession();
         if (autoLoggedIn) {
           setAutoLoginSuccess(true);
-          // 延迟跳转，让用户看到成功动画
+          // Allow the success animation to finish before navigation.
           setTimeout(() => {
             const redirect = (location.state as RedirectState | null)?.from?.pathname || '/';
             navigate(redirect, { replace: true });
@@ -141,7 +141,7 @@ export function LoginPage() {
           setRememberPassword(storedRememberPassword || Boolean(storedKey));
         }
       } finally {
-        // 自动登录成功时 showSplash 仍由 autoLoginSuccess 维持，可无条件结束 loading
+        // The success state keeps the splash visible after loading ends.
         setAutoLoading(false);
       }
     };
@@ -200,24 +200,15 @@ export function LoginPage() {
     return <Navigate to={redirect} replace />;
   }
 
-  // 显示启动动画（自动登录中或自动登录成功）
+  // Show the splash while restoring the session or after success.
   const showSplash = autoLoading || autoLoginSuccess;
 
   return (
     <div className={styles.container}>
-      {/* 左侧品牌展示区 */}
-      <div className={styles.brandPanel}>
-        <div className={styles.brandContent}>
-          <span className={styles.brandWord}>CLI</span>
-          <span className={styles.brandWord}>PROXY</span>
-          <span className={styles.brandWord}>API</span>
-        </div>
-      </div>
-
-      {/* 右侧功能交互区 */}
+      {/* Centered sign-in panel. */}
       <div className={styles.formPanel}>
         {showSplash ? (
-          /* 启动动画 */
+          /* Session restoration splash. */
           <div className={styles.splashContent}>
             <img src={INLINE_LOGO_JPEG} alt="CPAMC" className={styles.splashLogo} />
             <h1 className={styles.splashTitle}>{t('splash.title')}</h1>
@@ -227,13 +218,11 @@ export function LoginPage() {
             </div>
           </div>
         ) : (
-          /* 登录表单 */
+          /* Sign-in form. */
           <div className={styles.formContent}>
-            {/* Logo */}
-            <img src={INLINE_LOGO_JPEG} alt="Logo" className={styles.logo} />
-
-            {/* 登录表单卡片 */}
+            {/* Sign-in card. */}
             <div className={styles.loginCard}>
+              <img src={INLINE_LOGO_JPEG} alt="Logo" className={styles.logo} />
               <div className={styles.loginHeader}>
                 <div className={styles.titleRow}>
                   <div className={styles.title}>{t('title.login')}</div>

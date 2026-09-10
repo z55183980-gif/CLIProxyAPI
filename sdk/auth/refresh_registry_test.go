@@ -11,12 +11,21 @@ func TestProviderRefreshLeads(t *testing.T) {
 		authenticator Authenticator
 		want          time.Duration
 	}{
+		{name: "codex", authenticator: NewCodexAuthenticator(), want: 24 * time.Hour},
 		{name: "claude", authenticator: NewClaudeAuthenticator(), want: 4 * time.Hour},
+		{name: "antigravity", authenticator: NewAntigravityAuthenticator(), want: 30 * time.Minute},
+		{name: "kimi", authenticator: NewKimiAuthenticator(), want: 5 * time.Minute},
+		{name: "xai", authenticator: NewXAIAuthenticator(), want: 5 * time.Minute},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.authenticator.RefreshLead(); got == nil || *got != tt.want {
-				t.Fatalf("RefreshLead() = %v, want %v", got, tt.want)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.authenticator.Provider(); got != test.name {
+				t.Fatalf("Provider() = %q, want %q", got, test.name)
+			}
+			lead := test.authenticator.RefreshLead()
+			if lead == nil || *lead != test.want {
+				t.Fatalf("RefreshLead() = %v, want %v", lead, test.want)
 			}
 		})
 	}

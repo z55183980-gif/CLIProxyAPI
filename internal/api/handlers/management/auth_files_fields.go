@@ -292,7 +292,27 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 		if targetAuth.Metadata == nil {
 			targetAuth.Metadata = make(map[string]any)
 		}
+		if rootAuthFileField(fieldPath) == "concurrency" {
+			if fieldPath != "concurrency" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "concurrency does not support nested fields"})
+				return
+			}
+			if h.authManager.HomeEnabled() || isRuntimeOnlyAuth(targetAuth) || coreauth.IsConfigAPIKeyAuth(targetAuth) {
+				c.JSON(http.StatusConflict, gin.H{"error": "concurrency must be configured on the credential owner"})
+				return
+			}
+			limit, errCapacity := coreauth.ParseCapacity(value)
+			if errCapacity != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": errCapacity.Error()})
+				return
+			}
+			value = limit
+		}
 		if fieldPath == "proxy_id" {
+			if _, valid := value.(string); !valid && value != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "proxy_id must be a string"})
+				return
+			}
 			if proxyID, okProxyID := value.(string); okProxyID && strings.TrimSpace(proxyID) != "" {
 				registry, errRegistry := h.proxyRegistry()
 				if errRegistry != nil {
@@ -566,8 +586,10 @@ func syncAuthFileMetadataFields(auth *coreauth.Auth, touchedRoots map[string]str
 		proxyID, _ := auth.Metadata["proxy_id"].(string)
 		proxyID = strings.TrimSpace(proxyID)
 		if proxyID == "" {
-			auth.ProxyURL = ""
-			delete(auth.Metadata, "proxy_url")
+			if _, manual := touchedRoots["proxy_url"]; !manual {
+				auth.ProxyURL = ""
+				delete(auth.Metadata, "proxy_url")
+			}
 		} else if proxyURL, selected := proxyregistry.ResolveMetadataProxy(auth.Metadata); selected {
 			auth.ProxyURL = proxyURL
 			if proxyURL == "" {

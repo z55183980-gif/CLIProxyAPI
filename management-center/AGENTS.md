@@ -11,7 +11,7 @@ This is a React 19 + TypeScript + Vite management frontend for CLI Proxy API, no
 - `src/stores/`: Zustand state. `src/types/`: shared types. `src/styles/`: global styles and theme tokens.
 - `src/App.tsx`: hash-router setup. `src/router/MainRoutes.tsx`: authenticated route table. `ProtectedRoute` and `MainLayout` guard and wrap the authenticated app.
 - `src/assets/`: bundled assets, including provider icons in `icons/`.
-- `src/i18n/locales/`: `en.json`, `zh-CN.json`, `zh-TW.json`, and `ru.json`; fallback language is `zh-CN`. Update all four files when adding or changing translation keys, including accessible labels.
+- `src/i18n/locales/`: `en.json` and `zh-CN.json`; fallback language is `zh-CN`. Update both files when adding or changing translation keys, including accessible labels.
 
 ## Build, Test, and Development Commands
 
@@ -56,7 +56,7 @@ Keep user-facing text in i18n. Preserve keyboard interaction, accessible names, 
 
 Tests are centralized under `tests/` as `*.test.ts` and use `bun:test`. Existing suites cover pure logic, React server-side static rendering via `renderToStaticMarkup`, and source/contract checks. There is no configured browser DOM test harness; static markup tests do not verify browser interactions. Prefer extracting testable logic and following nearby test patterns rather than introducing a new framework by default.
 
-For code changes, add or update relevant regression tests, run focused tests while iterating, and run `bun run verify` before handoff. For UI changes, also verify the affected route in a browser and include screenshots or notes. Report commands actually run, failures, and anything not verified; if a backend or browser is unavailable, state the limitation explicitly. Documentation-only changes can be checked with diff/content validation instead of a full build.
+For code changes, add or update relevant regression tests, run focused tests while iterating, and run `bun run verify` before handoff. Visual verification is performed manually by a human reviewer, following the repository-wide policy. Do not launch browsers, capture screenshots, or run automated visual checks unless the user explicitly requests them. Continue non-visual checks and leave visual acceptance to the human reviewer without blocking delivery or requesting permission to skip it. Report commands actually run, failures, and anything not verified. Documentation-only changes can be checked with diff/content validation instead of a full build.
 
 ## Security
 

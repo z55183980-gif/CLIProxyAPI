@@ -1,25 +1,15 @@
 import { useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/Button';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
-import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
-  IconDownload,
   IconInfo,
-  IconModelCluster,
-  IconRefreshCw,
-  IconSettings,
-  IconTrash2,
 } from '@/components/ui/icons';
 import { ProviderStatusBar } from '@/components/providers/ProviderStatusBar';
 import type { AuthFileItem } from '@/types';
 import { resolveAuthProvider } from '@/utils/quota';
 import { statusBarDataFromRecentRequests } from '@/utils/recentRequests';
-import { formatFileSize } from '@/utils/format';
 import {
   QUOTA_PROVIDER_TYPES,
-  formatModified,
   getAuthFileIcon,
   getAuthFileStatusMessage,
   getThemeSurfaceIconBackground,
@@ -29,7 +19,6 @@ import {
   isRuntimeOnlyAuthFile,
   isThemeSurfaceIconProvider,
   normalizeProviderKey,
-  supportsAuthFileManualRefresh,
   type QuotaProviderType,
   type ResolvedTheme,
 } from '@/features/authFiles/constants';
@@ -74,27 +63,14 @@ export function AuthFileCard(props: AuthFileCardProps) {
     selected,
     resolvedTheme,
     disableControls,
-    deleting,
-    statusUpdating,
-    manualRefreshing,
     quotaFilterType,
     statusBarCache,
     entranceDelayMs,
-    onShowModels,
-    onDownload,
-    onManualRefresh,
-    onOpenPrefixProxyEditor,
-    onDelete,
-    onToggleStatus,
     onToggleSelect,
   } = props;
 
   const isRuntimeOnly = isRuntimeOnlyAuthFile(file);
   const providerKey = normalizeProviderKey(String(file.type ?? file.provider ?? 'unknown'));
-  const isAistudio = providerKey === 'aistudio';
-  const showModelsButton = !isRuntimeOnly || isAistudio;
-  const showManualRefreshButton = !isRuntimeOnly && supportsAuthFileManualRefresh(providerKey);
-  const isManualRefreshing = manualRefreshing[file.name] === true;
   const typeColor = getTypeColor(providerKey, resolvedTheme);
   const typeLabel = getTypeLabel(t, providerKey);
   const providerIcon = getAuthFileIcon(providerKey, resolvedTheme);
@@ -115,8 +91,10 @@ export function AuthFileCard(props: AuthFileCardProps) {
   const rawStatusMessage = getAuthFileStatusMessage(file);
   const hasStatusWarning = hasAuthFileStatusWarning(file);
 
-  const priorityValue = Number.isSafeInteger(file.priority) ? file.priority : undefined;
-  const weightValue = Number.isSafeInteger(file.weight) ? file.weight : undefined;
+  const priorityValue = Number.isSafeInteger(file.priority) ? file.priority : 1;
+  const currentCapacity = Number.isFinite(Number(file.currentConcurrency ?? file.current_concurrency)) ? Number(file.currentConcurrency ?? file.current_concurrency) : 0;
+  const configuredCapacity = Number(file.concurrency ?? file.maxConcurrency ?? file.max_concurrency);
+  const maxCapacity = Number.isFinite(configuredCapacity) && configuredCapacity > 0 ? configuredCapacity : 5;
   const noteValue = typeof file.note === 'string' ? file.note.trim() : '';
   // 主行显示账号（email/项目 ID），文件名降为满卡宽的 mono 副行
   const identity = deriveAuthFileIdentity(file);
@@ -256,117 +234,18 @@ export function AuthFileCard(props: AuthFileCardProps) {
       </div>
 
       <div className={styles.metaRow}>
-        <span title={t('auth_files.file_size')}>{file.size ? formatFileSize(file.size) : '-'}</span>
-        <span className={styles.metaDivider} aria-hidden="true">
-          ·
+        <span title={t('auth_files.capacity_display')}>{t('auth_files.capacity_display')}: {currentCapacity} / {maxCapacity}</span>
+        <span className={styles.metaDivider} aria-hidden="true">·</span>
+        <span className={styles.metaPriority} title={t('auth_files.priority_hint')}>
+          <span className={styles.metaMetricLabel}>{t('auth_files.priority_display')}</span>
+          <span>{priorityValue}</span>
         </span>
-        <span title={t('auth_files.file_modified')}>{formatModified(file)}</span>
-        {priorityValue !== undefined && (
-          <>
-            <span className={styles.metaDivider} aria-hidden="true">
-              ·
-            </span>
-            <span className={styles.metaPriority} title={t('auth_files.priority_hint')}>
-              <span className={styles.metaMetricLabel}>{t('auth_files.priority_display')}</span>
-              <span>{priorityValue}</span>
-            </span>
-          </>
-        )}
-        {weightValue !== undefined && (
-          <>
-            <span className={styles.metaDivider} aria-hidden="true">
-              ·
-            </span>
-            <span className={styles.metaWeight} title={t('auth_files.weight_hint')}>
-              <span className={styles.metaMetricLabel}>{t('auth_files.weight_display')}</span>
-              <span>{weightValue}</span>
-            </span>
-          </>
-        )}
       </div>
 
       {showQuotaLayout && quotaType && (
         <AuthFileQuotaSection file={file} quotaType={quotaType} disableControls={disableControls} />
       )}
 
-      <footer className={styles.actions}>
-        <div className={styles.actionsMain}>
-          {showModelsButton && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => onShowModels(file)}
-              title={t('auth_files.models_button')}
-              disabled={disableControls}
-            >
-              <IconModelCluster size={14} />
-              {t('auth_files.models_button')}
-            </Button>
-          )}
-          {!isRuntimeOnly && (
-            <div className={styles.utilityActions}>
-              {showManualRefreshButton && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => onManualRefresh(file)}
-                  className={styles.iconButton}
-                  title={t('auth_files.manual_refresh_button')}
-                  disabled={
-                    disableControls ||
-                    file.disabled ||
-                    statusUpdating[file.name] === true ||
-                    isManualRefreshing
-                  }
-                >
-                  {isManualRefreshing ? <LoadingSpinner size={14} /> : <IconRefreshCw size={15} />}
-                </Button>
-              )}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onDownload(file.name)}
-                className={styles.iconButton}
-                title={t('auth_files.download_button')}
-                disabled={disableControls}
-              >
-                <IconDownload size={15} />
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onOpenPrefixProxyEditor(file)}
-                className={styles.iconButton}
-                title={t('auth_files.prefix_proxy_button')}
-                disabled={disableControls || isManualRefreshing}
-              >
-                <IconSettings size={15} />
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => onDelete(file.name)}
-                className={styles.iconButton}
-                title={t('auth_files.delete_button')}
-                disabled={disableControls || deleting === file.name || isManualRefreshing}
-              >
-                {deleting === file.name ? <LoadingSpinner size={14} /> : <IconTrash2 size={15} />}
-              </Button>
-            </div>
-          )}
-        </div>
-        {!isRuntimeOnly && (
-          <div className={styles.toggleWrap}>
-            <span className={styles.toggleLabel}>{t('auth_files.status_toggle_label')}</span>
-            <ToggleSwitch
-              ariaLabel={t('auth_files.status_toggle_label')}
-              checked={!file.disabled}
-              disabled={disableControls || statusUpdating[file.name] === true || isManualRefreshing}
-              onChange={(value) => onToggleStatus(file, value)}
-            />
-          </div>
-        )}
-      </footer>
     </article>
   );
 }

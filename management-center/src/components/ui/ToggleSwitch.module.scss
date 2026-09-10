@@ -4,6 +4,7 @@
   align-items: center;
   gap: $spacing-sm;
   cursor: pointer;
+  user-select: none;
 }
 
 .labelLeft {
@@ -14,6 +15,14 @@
 
 .disabled {
   cursor: not-allowed;
+
+  .track {
+    opacity: 0.55;
+  }
+
+  .label {
+    color: var(--text-tertiary);
+  }
 }
 
 .root input {
@@ -26,10 +35,15 @@
 .track {
   width: 44px;
   height: 24px;
+  flex-shrink: 0;
   background: var(--border-color);
+  box-shadow: inset 0 0 0 1px var(--border-primary);
   border-radius: $radius-full;
   position: relative;
-  transition: background $transition-fast;
+  transition:
+    background-color $transition-fast,
+    box-shadow $transition-fast,
+    opacity $transition-fast;
 }
 
 .thumb {
@@ -41,18 +55,44 @@
   background: #fff;
   border-radius: $radius-full;
   box-shadow: $shadow-sm;
-  transition: transform $transition-fast;
+  transition:
+    transform $transition-fast,
+    background-color $transition-fast;
 }
 
 .root input:checked + .track {
-  background: var(--primary-color);
+  background: var(--button-primary);
+  box-shadow: none;
 }
 
 .root input:checked + .track .thumb {
+  background: var(--button-primary-text);
   transform: translateX(20px);
+}
+
+.root input:focus-visible + .track {
+  outline: 2px solid var(--button-focus);
+  outline-offset: 3px;
+}
+
+@media (hover: hover) {
+  .root:hover input:not(:disabled) + .track {
+    background: var(--border-hover);
+  }
+
+  .root:hover input:checked:not(:disabled) + .track {
+    background: var(--button-primary-hover);
+  }
 }
 
 .label {
   color: var(--text-primary);
   font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .thumb {
+    transition: none;
+  }
 }

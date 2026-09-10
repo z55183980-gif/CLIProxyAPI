@@ -156,8 +156,8 @@ func TestSchedulerPick_RoundRobinHighestPriority(t *testing.T) {
 	scheduler := newSchedulerForTest(
 		&RoundRobinSelector{},
 		&Auth{ID: "low", Provider: "gemini", Attributes: map[string]string{"priority": "0"}},
-		&Auth{ID: "high-b", Provider: "gemini", Attributes: map[string]string{"priority": "10"}},
-		&Auth{ID: "high-a", Provider: "gemini", Attributes: map[string]string{"priority": "10"}},
+		&Auth{ID: "high-b", Provider: "gemini", Attributes: map[string]string{"priority": "-10"}},
+		&Auth{ID: "high-a", Provider: "gemini", Attributes: map[string]string{"priority": "-10"}},
 	)
 
 	want := []string{"high-a", "high-b", "high-a"}
@@ -322,7 +322,7 @@ func TestSchedulerPick_WeightedRoundRobinSkipsNonPositiveWeightPriorityTier(t *t
 
 	scheduler := newSchedulerForTest(
 		&WeightedRoundRobinSelector{},
-		&Auth{ID: "excluded", Provider: "gemini", Attributes: map[string]string{"priority": "10", AttributeWeight: "0"}},
+		&Auth{ID: "excluded", Provider: "gemini", Attributes: map[string]string{"priority": "-10", AttributeWeight: "0"}},
 		&Auth{ID: "available", Provider: "gemini", Attributes: map[string]string{"priority": "0", AttributeWeight: "1"}},
 	)
 	got, errPick := scheduler.pickSingle(context.Background(), "gemini", "", cliproxyexecutor.Options{}, nil)
@@ -447,7 +447,7 @@ func TestSchedulerPick_CodexWebsocketPrefersWebsocketEnabledAcrossPriorities(t *
 
 	scheduler := newSchedulerForTest(
 		&RoundRobinSelector{},
-		&Auth{ID: "codex-http", Provider: "codex", Attributes: map[string]string{"priority": "10"}},
+		&Auth{ID: "codex-http", Provider: "codex", Attributes: map[string]string{"priority": "-10"}},
 		&Auth{ID: "codex-ws-a", Provider: "codex", Attributes: map[string]string{"priority": "0", "websockets": "true"}},
 		&Auth{ID: "codex-ws-b", Provider: "codex", Attributes: map[string]string{"priority": "0", "websockets": "true"}},
 	)
@@ -843,9 +843,9 @@ func TestSchedulerPick_MixedProvidersPrefersHighestPriorityTier(t *testing.T) {
 
 	scheduler := newSchedulerForTest(
 		&RoundRobinSelector{},
-		&Auth{ID: "low", Provider: "provider-low", Attributes: map[string]string{"priority": "4"}},
-		&Auth{ID: "high-a", Provider: "provider-high-a", Attributes: map[string]string{"priority": "7"}},
-		&Auth{ID: "high-b", Provider: "provider-high-b", Attributes: map[string]string{"priority": "7"}},
+		&Auth{ID: "low", Provider: "provider-low", Attributes: map[string]string{"priority": "-4"}},
+		&Auth{ID: "high-a", Provider: "provider-high-a", Attributes: map[string]string{"priority": "-7"}},
+		&Auth{ID: "high-b", Provider: "provider-high-b", Attributes: map[string]string{"priority": "-7"}},
 	)
 
 	providers := []string{"provider-low", "provider-high-a", "provider-high-b"}
@@ -1764,7 +1764,7 @@ func TestManagerPluginSchedulerCandidatesAreSafeCopies(t *testing.T) {
 			"access_token": "token-value",
 			"api_key":      "api-key-value",
 			"cookie":       "cookie-value",
-			"priority":     "7",
+			"priority":     "-7",
 			"team":         "alpha",
 		},
 		Metadata: map[string]any{"tenant": "one"},
@@ -1780,7 +1780,7 @@ func TestManagerPluginSchedulerCandidatesAreSafeCopies(t *testing.T) {
 				t.Fatalf("len(req.Candidates) = %d, want %d", len(req.Candidates), 1)
 			}
 			candidate := req.Candidates[0]
-			if candidate.ID != "auth-a" || candidate.Provider != "gemini" || candidate.Priority != 7 || candidate.Status != string(StatusActive) {
+			if candidate.ID != "auth-a" || candidate.Provider != "gemini" || candidate.Priority != -7 || candidate.Status != string(StatusActive) {
 				t.Fatalf("scheduler candidate = %#v, want sanitized auth-a metadata", candidate)
 			}
 			for _, key := range []string{"access_token", "api_key", "cookie"} {
@@ -1788,8 +1788,8 @@ func TestManagerPluginSchedulerCandidatesAreSafeCopies(t *testing.T) {
 					t.Fatalf("scheduler candidate Attributes contains sensitive key %q", key)
 				}
 			}
-			if candidate.Attributes["priority"] != "7" {
-				t.Fatalf("scheduler candidate priority attribute = %q, want 7", candidate.Attributes["priority"])
+			if candidate.Attributes["priority"] != "-7" {
+				t.Fatalf("scheduler candidate priority attribute = %q, want -7", candidate.Attributes["priority"])
 			}
 			if len(candidate.Metadata) != 0 {
 				t.Fatalf("scheduler candidate Metadata = %#v, want empty", candidate.Metadata)

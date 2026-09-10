@@ -38,6 +38,49 @@ const makeEditor = (json: Record<string, unknown>, weight: string): PrefixProxyE
 
 const resolveError = (key: string) => key;
 
+describe('IP management credential binding', () => {
+  test('binds by ID without submitting a stale manual URL', () => {
+    const editor = {
+      ...makeEditor({ proxy_url: 'http://old.example:8080' }, ''),
+      proxyId: 'proxy-1',
+      proxyUrl: '',
+    };
+    expect(buildAuthFileFieldsPatch(editor, resolveError)).toEqual({ proxy_id: 'proxy-1' });
+  });
+
+  test('does not change an existing binding when editing unrelated fields', () => {
+    const editor = {
+      ...makeEditor({ proxy_id: 'proxy-1', proxy_url: 'http://old.example:8080' }, ''),
+      proxyId: 'proxy-1',
+    };
+    expect(buildAuthFileFieldsPatch(editor, resolveError)).toEqual({});
+  });
+
+  test('clears the binding and derived URL on unbind', () => {
+    const editor = {
+      ...makeEditor({ proxy_id: 'proxy-1', proxy_url: 'http://old.example:8080' }, ''),
+      proxyId: '',
+    };
+    expect(buildAuthFileFieldsPatch(editor, resolveError)).toEqual({
+      proxy_id: '',
+      proxy_url: '',
+    });
+  });
+
+  test('explicitly retains a manual URL even when it equals the formerly bound URL', () => {
+    const proxyUrl = 'http://old.example:8080';
+    const editor = {
+      ...makeEditor({ proxy_id: 'proxy-1', proxy_url: proxyUrl }, ''),
+      proxyId: '',
+      proxyUrl,
+    };
+    expect(buildAuthFileFieldsPatch(editor, resolveError)).toEqual({
+      proxy_id: '',
+      proxy_url: proxyUrl,
+    });
+  });
+});
+
 describe('auth-file credential weight patch', () => {
   test('writes numeric weight and uses null to restore the default', () => {
     expect(buildAuthFileFieldsPatch(makeEditor({}, '0'), resolveError)).toEqual({ weight: 0 });

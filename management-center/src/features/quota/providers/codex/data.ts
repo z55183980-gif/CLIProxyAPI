@@ -39,6 +39,7 @@ import { normalizeAuthIndex } from '@/utils/authIndex';
 import type { QuotaProviderData } from '../types';
 
 const CODEX_RESET_CREDITS_REQUEST_TIMEOUT_MS = 8000;
+const CODEX_SUBSCRIPTIONS_URL = 'https://chatgpt.com/backend-api/subscriptions';
 
 type CodexResetCreditsData = {
   availableCount: number | null;
@@ -350,6 +351,32 @@ const fetchCodexResetCredits = async (
   }
 };
 
+const fetchCodexSubscriptionExpiry = async (
+  file: AuthFileItem,
+  authIndex: string,
+  requestHeader: Record<string, string>
+): Promise<string | null> => {
+  const accountId = resolveCodexChatgptAccountId(file);
+  if (!accountId) return null;
+  try {
+    const result = await apiCallApi.request({
+      authIndex,
+      method: 'GET',
+      url: `${CODEX_SUBSCRIPTIONS_URL}?account_id=${encodeURIComponent(accountId)}`,
+      header: { ...requestHeader },
+    });
+    if (result.statusCode < 200 || result.statusCode >= 300) return null;
+    const body =
+      result.body && typeof result.body === 'object'
+        ? (result.body as Record<string, unknown>)
+        : null;
+    const activeUntil = body?.active_until ?? body?.activeUntil;
+    return typeof activeUntil === 'string' && activeUntil.trim() ? activeUntil.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
 const fetchCodexQuota = async (file: AuthFileItem, t: TFunction): Promise<CodexQuotaData> => {
   const rawAuthIndex = file['auth_index'] ?? file.authIndex;
   const authIndex = normalizeAuthIndex(rawAuthIndex);
@@ -358,7 +385,7 @@ const fetchCodexQuota = async (file: AuthFileItem, t: TFunction): Promise<CodexQ
   }
 
   const planTypeFromFile = resolveCodexPlanType(file);
-  const subscriptionActiveUntil = resolveCodexSubscriptionActiveUntil(file);
+  let subscriptionActiveUntil = resolveCodexSubscriptionActiveUntil(file);
   const requestHeader = buildCodexRequestHeader(file);
 
   const result = await apiCallApi.request({
@@ -375,6 +402,10 @@ const fetchCodexQuota = async (file: AuthFileItem, t: TFunction): Promise<CodexQ
   const payload = parseCodexUsagePayload(result.body ?? result.bodyText);
   if (!payload) {
     throw new Error(t('codex_quota.empty_windows'));
+  }
+
+  if (subscriptionActiveUntil === null) {
+    subscriptionActiveUntil = await fetchCodexSubscriptionExpiry(file, authIndex, requestHeader);
   }
 
   const planTypeFromUsage = normalizePlanType(payload.plan_type ?? payload.planType);

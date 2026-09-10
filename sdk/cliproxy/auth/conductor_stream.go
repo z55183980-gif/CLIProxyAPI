@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -136,9 +137,18 @@ func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, re
 				failed = true
 				entry := logEntryWithRequestID(ctx)
 				warnLogUpstreamFailure(ctx, entry, provider, resultModel, auth, time.Since(streamStart), chunk.Err)
+				if flow := sub2apiState(ctx); flow != nil && !isRequestScopedError(chunk.Err) && !errors.Is(chunk.Err, context.Canceled) && !errors.Is(chunk.Err, context.DeadlineExceeded) {
+					failure := m.classifySub2APIFailure(auth, chunk.Err, false)
+					m.refineSub2APIFailure(auth, failure, headers, resultModel, time.Now(), false)
+					failure.retry = false
+					flow.lastFailure = failure
+					chunk.Err = failure
+				}
 				rerr := resultErrorFromError(chunk.Err)
 				action, okAction := matchRequestScopedErrorAction(auth, chunk.Err, m.runtimeConfigSnapshot())
 				result := Result{AuthID: auth.ID, Provider: provider, Model: resultModel, RouteModel: routeModel, Success: false, Error: rerr, Options: opts}
+				result.RetryAfter = retryAfterFromError(chunk.Err)
+				result.CredentialScope = isCredentialScopedError(chunk.Err)
 				applyRequestScopedActionToResult(action, okAction, &result)
 				m.recordExecutionResult(ctx, result, auth, ephemeralResult)
 			}
@@ -232,8 +242,9 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 			return nil, errCtx
 		}
 		entry := logEntryWithRequestID(ctx)
+		ctx = syncMetadataSessionToContext(ctx, execOpts.Metadata)
 		startStream := time.Now()
-		streamResult, errStream := executor.ExecuteStream(ctx, auth, execReq, execOpts)
+		streamResult, errStream := m.streamWithCapacity(ctx, executor, auth, execReq, execOpts)
 		errStream = markUpstreamExecutionAttemptFromContext(ctx, errStream)
 		if hasUpstreamExecutionAttempt(errStream) {
 			upstreamErr = errStream
@@ -251,8 +262,9 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 					publishSelectedAuthMetadata(execOpts.Metadata, auth)
 					didRefreshOnUnauthorized = true
 					ctx = newUpstreamAttemptContext(ctx)
+					ctx = syncMetadataSessionToContext(ctx, execOpts.Metadata)
 					startRetry := time.Now()
-					streamResult, errStream = executor.ExecuteStream(ctx, auth, execReq, execOpts)
+					streamResult, errStream = m.streamWithCapacity(ctx, executor, auth, execReq, execOpts)
 					errStream = markUpstreamExecutionAttemptFromContext(ctx, errStream)
 					if hasUpstreamExecutionAttempt(errStream) {
 						upstreamErr = errStream
@@ -302,7 +314,7 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 				return nil, errStream
 			}
 			lastErr = errStream
-			if result.CredentialScope {
+			if result.CredentialScope || sub2apiFailureFrom(errStream) != nil {
 				return nil, preferredExecutionAttemptError(errStream, upstreamErr)
 			}
 			continue
@@ -328,7 +340,7 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 					didRefreshOnUnauthorized = true
 					ctx = newUpstreamAttemptContext(ctx)
 					startRetry := time.Now()
-					retryStream, retryErr := executor.ExecuteStream(ctx, auth, execReq, execOpts)
+					retryStream, retryErr := m.streamWithCapacity(ctx, executor, auth, execReq, execOpts)
 					retryErr = markUpstreamExecutionAttemptFromContext(ctx, retryErr)
 					retryStream, retryErr = validateStreamResult(retryStream, retryErr)
 					retryErr = markUpstreamExecutionAttemptFromContext(ctx, retryErr)

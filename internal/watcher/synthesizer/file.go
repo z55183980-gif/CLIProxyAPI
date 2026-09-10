@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/proxyregistry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -32,7 +33,6 @@ func (s *FileSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth, e
 	if ctx == nil || ctx.AuthDir == "" {
 		return out, nil
 	}
-	proxyregistry.ConfigureForAuthDir(ctx.AuthDir)
 
 	entries, err := os.ReadDir(ctx.AuthDir)
 	if err != nil {
@@ -169,6 +169,7 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 	if p, ok := metadata["proxy_url"].(string); ok {
 		proxyURL = p
 	}
+
 	if resolved, selected := proxyregistry.ResolveMetadataProxy(metadata); selected {
 		proxyURL = resolved
 	}
@@ -236,6 +237,16 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 	coreauth.SetOAuthModelAliasesAttribute(a, perAccountModelAliases)
 	ApplyAuthExcludedModelsMeta(a, cfg, perAccountExcluded, "oauth")
 	applyFingerprintProfileAttribute(a, metadata)
+	// For codex auth files, extract plan_type from the JWT id_token.
+	if provider == "codex" {
+		if idTokenRaw, ok := metadata["id_token"].(string); ok && strings.TrimSpace(idTokenRaw) != "" {
+			if claims, errParse := codex.ParseJWTToken(idTokenRaw); errParse == nil && claims != nil {
+				if pt := strings.TrimSpace(claims.CodexAuthInfo.ChatgptPlanType); pt != "" {
+					a.Attributes["plan_type"] = pt
+				}
+			}
+		}
+	}
 	return []*coreauth.Auth{a}, nil
 }
 

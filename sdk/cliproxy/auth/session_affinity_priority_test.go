@@ -50,7 +50,7 @@ func TestManagerSessionAffinityPreservesBindingAcrossHigherPriorityRecovery(t *t
 			manager.RegisterExecutor(schedulerTestExecutor{provider: provider})
 
 			for _, auth := range []*Auth{
-				{ID: highID, Provider: provider, Status: StatusActive, Attributes: map[string]string{"priority": "1"}},
+				{ID: highID, Provider: provider, Status: StatusActive, Attributes: map[string]string{"priority": "-1"}},
 				{ID: lowID, Provider: provider, Status: StatusActive, Attributes: map[string]string{"priority": "0"}},
 			} {
 				if _, errRegister := manager.Register(WithSkipPersist(ctx), auth); errRegister != nil {
@@ -123,7 +123,7 @@ func TestSessionAffinityFallbackOnlyReceivesHighestAvailablePriority(t *testing.
 	})
 	defer selector.Stop()
 
-	high := &Auth{ID: "a-high", Provider: "test", Status: StatusActive, Attributes: map[string]string{"priority": "1"}}
+	high := &Auth{ID: "a-high", Provider: "test", Status: StatusActive, Attributes: map[string]string{"priority": "-1"}}
 	low := &Auth{ID: "z-low", Provider: "test", Status: StatusActive, Attributes: map[string]string{"priority": "0"}}
 	auths := []*Auth{high, low}
 	opts := cliproxyexecutor.Options{Metadata: map[string]any{

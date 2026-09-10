@@ -1,0 +1,45 @@
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.label {
+  color: #6b7280;
+}
+.value {
+  color: #374151;
+  font-weight: 500;
+}
+.accountCost {
+  color: #059669;
+  font-weight: 500;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+:global([data-theme='dark']) {
+  .label {
+    color: #9ca3af;
+  }
+  .value {
+    color: #d1d5db;
+  }
+  .accountCost {
+    color: #34d399;
+  }
+}

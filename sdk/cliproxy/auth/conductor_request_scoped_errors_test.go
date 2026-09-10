@@ -88,6 +88,7 @@ func (e customStatusError) RetryAfter() *time.Duration {
 	return e.retryAfter
 }
 
+// Legacy configurable request-scoped actions apply outside Claude/Codex failover.
 func TestRequestScopedErrors_ActionStop(t *testing.T) {
 	previous := quotaCooldownDisabled.Load()
 	quotaCooldownDisabled.Store(false)
@@ -97,9 +98,9 @@ func TestRequestScopedErrors_ActionStop(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-claude-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -119,12 +120,12 @@ func TestRequestScopedErrors_ActionStop(t *testing.T) {
 	}
 	auth2 := &Auth{
 		ID:       "auth-claude-2",
-		Provider: "claude",
+		Provider: "gemini",
 		Status:   StatusActive,
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
-	reg.RegisterClient(auth2.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth2.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 		reg.UnregisterClient(auth2.ID)
@@ -139,7 +140,7 @@ func TestRequestScopedErrors_ActionStop(t *testing.T) {
 
 	execCount := 0
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			execCount++
 			cliproxyexecutor.MarkUpstreamAttempt(ctx)
@@ -151,7 +152,7 @@ func TestRequestScopedErrors_ActionStop(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	resp, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	resp, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec == nil {
 		t.Fatalf("expected error, got resp: %+v", resp)
 	}
@@ -179,9 +180,9 @@ func TestRequestScopedErrors_ActionStopAndCooldown(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-claude-stop-cool",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -196,12 +197,12 @@ func TestRequestScopedErrors_ActionStopAndCooldown(t *testing.T) {
 	}
 	auth2 := &Auth{
 		ID:       "auth-claude-second",
-		Provider: "claude",
+		Provider: "gemini",
 		Status:   StatusActive,
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
-	reg.RegisterClient(auth2.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth2.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 		reg.UnregisterClient(auth2.ID)
@@ -216,7 +217,7 @@ func TestRequestScopedErrors_ActionStopAndCooldown(t *testing.T) {
 
 	execCount := 0
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			execCount++
 			return cliproxyexecutor.Response{}, customStatusError{
@@ -227,7 +228,7 @@ func TestRequestScopedErrors_ActionStopAndCooldown(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	_, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -252,9 +253,9 @@ func TestRequestScopedErrors_ActionContinue(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-claude-continue-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -269,12 +270,12 @@ func TestRequestScopedErrors_ActionContinue(t *testing.T) {
 	}
 	auth2 := &Auth{
 		ID:       "auth-claude-continue-2",
-		Provider: "claude",
+		Provider: "gemini",
 		Status:   StatusActive,
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
-	reg.RegisterClient(auth2.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth2.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 		reg.UnregisterClient(auth2.ID)
@@ -289,7 +290,7 @@ func TestRequestScopedErrors_ActionContinue(t *testing.T) {
 
 	execCount := 0
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			execCount++
 			if auth.ID == "auth-claude-continue-1" {
@@ -303,7 +304,7 @@ func TestRequestScopedErrors_ActionContinue(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	resp, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	resp, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec != nil {
 		t.Fatalf("unexpected error: %v", errExec)
 	}
@@ -331,9 +332,9 @@ func TestRequestScopedErrors_ActionContinueAndCooldown(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-claude-continue-cool-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -348,12 +349,12 @@ func TestRequestScopedErrors_ActionContinueAndCooldown(t *testing.T) {
 	}
 	auth2 := &Auth{
 		ID:       "auth-claude-continue-cool-2",
-		Provider: "claude",
+		Provider: "gemini",
 		Status:   StatusActive,
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
-	reg.RegisterClient(auth2.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth2.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 		reg.UnregisterClient(auth2.ID)
@@ -368,7 +369,7 @@ func TestRequestScopedErrors_ActionContinueAndCooldown(t *testing.T) {
 
 	execCount := 0
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			execCount++
 			if auth.ID == "auth-claude-continue-cool-1" {
@@ -382,7 +383,7 @@ func TestRequestScopedErrors_ActionContinueAndCooldown(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	resp, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	resp, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec != nil {
 		t.Fatalf("unexpected error: %v", errExec)
 	}
@@ -410,9 +411,9 @@ func TestRequestScopedErrors_MatchRegexr(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-regex-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -427,12 +428,12 @@ func TestRequestScopedErrors_MatchRegexr(t *testing.T) {
 	}
 	auth2 := &Auth{
 		ID:       "auth-regex-2",
-		Provider: "claude",
+		Provider: "gemini",
 		Status:   StatusActive,
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
-	reg.RegisterClient(auth2.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth2.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 		reg.UnregisterClient(auth2.ID)
@@ -447,7 +448,7 @@ func TestRequestScopedErrors_MatchRegexr(t *testing.T) {
 
 	execCount := 0
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			execCount++
 			return cliproxyexecutor.Response{}, customStatusError{
@@ -458,7 +459,7 @@ func TestRequestScopedErrors_MatchRegexr(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	_, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -481,7 +482,7 @@ func (e *customStreamMockExecutor) Identifier() string {
 	if e.identifier != "" {
 		return e.identifier
 	}
-	return "claude"
+	return "gemini"
 }
 
 func (e *customStreamMockExecutor) ExecuteStream(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
@@ -500,9 +501,9 @@ func TestRequestScopedErrors_Stream_ActionStop(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-stream-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -515,12 +516,12 @@ func TestRequestScopedErrors_Stream_ActionStop(t *testing.T) {
 	}
 	auth2 := &Auth{
 		ID:       "auth-stream-2",
-		Provider: "claude",
+		Provider: "gemini",
 		Status:   StatusActive,
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
-	reg.RegisterClient(auth2.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth2.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 		reg.UnregisterClient(auth2.ID)
@@ -535,7 +536,7 @@ func TestRequestScopedErrors_Stream_ActionStop(t *testing.T) {
 
 	execCount := 0
 	streamExecutor := &customStreamMockExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		streamFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 			execCount++
 			cliproxyexecutor.MarkUpstreamAttempt(ctx)
@@ -544,7 +545,7 @@ func TestRequestScopedErrors_Stream_ActionStop(t *testing.T) {
 	}
 	m.RegisterExecutor(streamExecutor)
 
-	_, errStream := m.ExecuteStream(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errStream := m.ExecuteStream(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errStream == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -570,9 +571,9 @@ func TestRequestScopedErrors_StreamBootstrap_StopAndCooldown(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-stream-boot-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -585,12 +586,12 @@ func TestRequestScopedErrors_StreamBootstrap_StopAndCooldown(t *testing.T) {
 	}
 	auth2 := &Auth{
 		ID:       "auth-stream-boot-2",
-		Provider: "claude",
+		Provider: "gemini",
 		Status:   StatusActive,
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
-	reg.RegisterClient(auth2.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth2.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 		reg.UnregisterClient(auth2.ID)
@@ -605,7 +606,7 @@ func TestRequestScopedErrors_StreamBootstrap_StopAndCooldown(t *testing.T) {
 
 	execCount := 0
 	streamExecutor := &customStreamMockExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		streamFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 			execCount++
 			ch := make(chan cliproxyexecutor.StreamChunk, 1)
@@ -619,7 +620,7 @@ func TestRequestScopedErrors_StreamBootstrap_StopAndCooldown(t *testing.T) {
 	}
 	m.RegisterExecutor(streamExecutor)
 
-	_, errStream := m.ExecuteStream(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errStream := m.ExecuteStream(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errStream == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -644,9 +645,9 @@ func TestRequestScopedErrors_Stop_StopsOuterRetryOn429(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-retry-stop-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -658,7 +659,7 @@ func TestRequestScopedErrors_Stop_StopsOuterRetryOn429(t *testing.T) {
 		},
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 	})
@@ -669,7 +670,7 @@ func TestRequestScopedErrors_Stop_StopsOuterRetryOn429(t *testing.T) {
 
 	execCount := 0
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			execCount++
 			return cliproxyexecutor.Response{}, customStatusError{
@@ -681,7 +682,7 @@ func TestRequestScopedErrors_Stop_StopsOuterRetryOn429(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	_, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -700,9 +701,9 @@ func TestRequestScopedErrors_Cooldown_OverridesDisableCooling(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-disable-cooling-override",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"disable_cooling": true,
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
@@ -715,7 +716,7 @@ func TestRequestScopedErrors_Cooldown_OverridesDisableCooling(t *testing.T) {
 		},
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 	})
@@ -725,7 +726,7 @@ func TestRequestScopedErrors_Cooldown_OverridesDisableCooling(t *testing.T) {
 	}
 
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			return cliproxyexecutor.Response{}, customStatusError{
 				code: 400,
@@ -735,7 +736,7 @@ func TestRequestScopedErrors_Cooldown_OverridesDisableCooling(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	_, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -755,9 +756,9 @@ func TestRequestScopedErrors_CountTokens_StopAndCooldown(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-count-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -769,7 +770,7 @@ func TestRequestScopedErrors_CountTokens_StopAndCooldown(t *testing.T) {
 		},
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 	})
@@ -779,7 +780,7 @@ func TestRequestScopedErrors_CountTokens_StopAndCooldown(t *testing.T) {
 	}
 
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		countFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			cliproxyexecutor.MarkUpstreamAttempt(ctx)
 			return cliproxyexecutor.Response{}, customStatusError{
@@ -790,7 +791,7 @@ func TestRequestScopedErrors_CountTokens_StopAndCooldown(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	_, errCount := m.ExecuteCount(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errCount := m.ExecuteCount(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errCount == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -841,9 +842,9 @@ func TestRequestScopedErrors_ResolvedFromManagerConfig(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-config-resolve-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{AttributeConfigIndex: "0", "priority": "10"},
+		Attributes: map[string]string{AttributeConfigIndex: "0", "priority": "-10"},
 	}
 	authCompat := &Auth{
 		ID:       "auth-config-resolve-compat",
@@ -852,12 +853,12 @@ func TestRequestScopedErrors_ResolvedFromManagerConfig(t *testing.T) {
 		Attributes: map[string]string{
 			AttributeConfigIndex: "0",
 			"compat_name":        "my-compat",
-			"priority":           "10",
+			"priority":           "-10",
 		},
 	}
 
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	reg.RegisterClient(authCompat.ID, "openai-compatible-my-compat", []*registry.ModelInfo{{ID: "compat-model"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
@@ -872,7 +873,7 @@ func TestRequestScopedErrors_ResolvedFromManagerConfig(t *testing.T) {
 	}
 
 	execClaude := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			return cliproxyexecutor.Response{}, customStatusError{code: 400, msg: "from_config_rule occurred"}
 		},
@@ -886,7 +887,7 @@ func TestRequestScopedErrors_ResolvedFromManagerConfig(t *testing.T) {
 	m.RegisterExecutor(execClaude)
 	m.RegisterExecutor(execCompat)
 
-	_, errExec1 := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errExec1 := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec1 == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -914,9 +915,9 @@ func TestRequestScopedErrors_NonMatching_FallsBackToDefault(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-nomatch-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -928,7 +929,7 @@ func TestRequestScopedErrors_NonMatching_FallsBackToDefault(t *testing.T) {
 		},
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 	})
@@ -938,7 +939,7 @@ func TestRequestScopedErrors_NonMatching_FallsBackToDefault(t *testing.T) {
 	}
 
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			// Status 400 with standard request-fault message (unmatched by rule)
 			return cliproxyexecutor.Response{}, customStatusError{
@@ -949,7 +950,7 @@ func TestRequestScopedErrors_NonMatching_FallsBackToDefault(t *testing.T) {
 	}
 	m.RegisterExecutor(exec)
 
-	_, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -970,9 +971,9 @@ func TestRequestScopedErrors_StreamSubsequentChunkError(t *testing.T) {
 
 	auth1 := &Auth{
 		ID:         "auth-stream-subsequent-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -984,7 +985,7 @@ func TestRequestScopedErrors_StreamSubsequentChunkError(t *testing.T) {
 		},
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 	})
@@ -994,7 +995,7 @@ func TestRequestScopedErrors_StreamSubsequentChunkError(t *testing.T) {
 	}
 
 	streamExecutor := &customStreamMockExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		streamFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 			ch := make(chan cliproxyexecutor.StreamChunk, 2)
 			ch <- cliproxyexecutor.StreamChunk{Payload: []byte(`data: {"type":"message_start"}\n\n`)}
@@ -1008,7 +1009,7 @@ func TestRequestScopedErrors_StreamSubsequentChunkError(t *testing.T) {
 	}
 	m.RegisterExecutor(streamExecutor)
 
-	streamResult, errStream := m.ExecuteStream(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	streamResult, errStream := m.ExecuteStream(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errStream != nil {
 		t.Fatalf("unexpected stream start error: %v", errStream)
 	}
@@ -1035,9 +1036,9 @@ func TestRequestScopedErrors_UnmatchedBootstrapError_PreservesDefault(t *testing
 
 	auth1 := &Auth{
 		ID:         "auth-unmatched-boot-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -1049,7 +1050,7 @@ func TestRequestScopedErrors_UnmatchedBootstrapError_PreservesDefault(t *testing
 		},
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 	})
@@ -1059,7 +1060,7 @@ func TestRequestScopedErrors_UnmatchedBootstrapError_PreservesDefault(t *testing
 	}
 
 	streamExecutor := &customStreamMockExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		streamFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 			ch := make(chan cliproxyexecutor.StreamChunk, 1)
 			ch <- cliproxyexecutor.StreamChunk{Err: customStatusError{code: 400, msg: `{"error":{"type":"invalid_request_error","message":"Unmatched bad request"}}`}}
@@ -1072,7 +1073,7 @@ func TestRequestScopedErrors_UnmatchedBootstrapError_PreservesDefault(t *testing
 	}
 	m.RegisterExecutor(streamExecutor)
 
-	_, errStream := m.ExecuteStream(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errStream := m.ExecuteStream(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errStream == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1097,9 +1098,9 @@ func TestRequestScopedErrors_TransientCooldownDisabled_ForceCooldownStillApplies
 
 	auth1 := &Auth{
 		ID:         "auth-transient-disabled-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -1111,7 +1112,7 @@ func TestRequestScopedErrors_TransientCooldownDisabled_ForceCooldownStillApplies
 		},
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 	})
@@ -1121,14 +1122,14 @@ func TestRequestScopedErrors_TransientCooldownDisabled_ForceCooldownStillApplies
 	}
 
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			return cliproxyexecutor.Response{}, customStatusError{code: 500, msg: "cooldown_on_500"}
 		},
 	}
 	m.RegisterExecutor(exec)
 
-	_, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1240,9 +1241,9 @@ func TestRequestScopedErrors_ResponseBodyProvider_MatchesUnderlyingPayload(t *te
 
 	auth1 := &Auth{
 		ID:         "auth-fast-wrapped-1",
-		Provider:   "claude",
+		Provider:   "gemini",
 		Status:     StatusActive,
-		Attributes: map[string]string{"priority": "10"},
+		Attributes: map[string]string{"priority": "-10"},
 		Metadata: map[string]any{
 			"request_scoped_errors": []internalconfig.RequestScopedErrorRule{
 				{
@@ -1254,7 +1255,7 @@ func TestRequestScopedErrors_ResponseBodyProvider_MatchesUnderlyingPayload(t *te
 		},
 	}
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(auth1.ID, "claude", []*registry.ModelInfo{{ID: "claude-3"}})
+	reg.RegisterClient(auth1.ID, "gemini", []*registry.ModelInfo{{ID: "claude-3"}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(auth1.ID)
 	})
@@ -1264,7 +1265,7 @@ func TestRequestScopedErrors_ResponseBodyProvider_MatchesUnderlyingPayload(t *te
 	}
 
 	exec := &mockCustomErrorExecutor{
-		identifier: "claude",
+		identifier: "gemini",
 		executeFn: func(ctx context.Context, auth *Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 			// Error() returns a generic wrapper text, while ResponseBody() provides the underlying json payload
 			return cliproxyexecutor.Response{}, wrappedResponseBodyError{
@@ -1276,7 +1277,7 @@ func TestRequestScopedErrors_ResponseBodyProvider_MatchesUnderlyingPayload(t *te
 	}
 	m.RegisterExecutor(exec)
 
-	_, errExec := m.Execute(context.Background(), []string{"claude"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
+	_, errExec := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: "claude-3"}, cliproxyexecutor.Options{})
 	if errExec == nil {
 		t.Fatal("expected error, got nil")
 	}

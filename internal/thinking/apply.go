@@ -20,8 +20,13 @@ var providerAppliersMu sync.RWMutex
 
 // nativeProviderAppliers maps built-in provider names to their implementations.
 var nativeProviderAppliers = map[string]ProviderApplier{
-	"claude": nil,
-	"openai": nil,
+	"gemini":      nil,
+	"claude":      nil,
+	"openai":      nil,
+	"codex":       nil,
+	"antigravity": nil,
+	"kimi":        nil,
+	"xai":         nil,
 }
 
 // pluginProviderAppliers maps plugin-owned provider names to their implementations.
@@ -190,7 +195,7 @@ func ApplyThinkingWithModelInfoAndSummary(body, sourceBody []byte, model string,
 
 func applyThinking(body, sourceBody []byte, model string, fromFormat string, toFormat string, providerKey string, resolvedModelInfo *registry.ModelInfo, modelInfoResolved bool, summaryConfig SummaryConfig) ([]byte, error) {
 	providerFormat := strings.ToLower(strings.TrimSpace(toFormat))
-	if modelInfoResolved && providerFormat == "openai-response" {
+	if providerFormat == "openai-response" {
 		providerFormat = "codex"
 	}
 	providerKey = strings.ToLower(strings.TrimSpace(providerKey))

@@ -51,7 +51,7 @@ describe('resolveStatus', () => {
   });
 
   test('every status resolves label keys that exist in all four locales', async () => {
-    const locales = ['en', 'zh-CN', 'zh-TW', 'ru'];
+    const locales = ['en', 'zh-CN'];
     const inputs: Partial<ConfigStatusInput>[] = [
       { disconnected: true },
       { loading: true },

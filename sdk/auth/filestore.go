@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/proxyregistry"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
@@ -226,7 +226,6 @@ func (s *FileTokenStore) resolveDeletePath(id string) (string, error) {
 }
 
 func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Auth, error) {
-	proxyregistry.ConfigureForAuthDir(baseDir)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -292,15 +291,33 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 					return nil, errWeight
 				}
 				cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
-				if resolved, selected := proxyregistry.ResolveMetadataProxy(auth.Metadata); selected {
-					auth.ProxyURL = resolved
-				}
 			}
 			return auths, nil
 		}
 	}
 	if provider == "" {
 		provider = "unknown"
+	}
+	if provider == "antigravity" {
+		projectID := ""
+		if pid, ok := metadata["project_id"].(string); ok {
+			projectID = strings.TrimSpace(pid)
+		}
+		if projectID == "" {
+			accessToken := extractAccessToken(metadata)
+			if accessToken != "" {
+				fetchedProjectID, errFetch := FetchAntigravityProjectID(context.Background(), accessToken, http.DefaultClient)
+				if errFetch == nil && strings.TrimSpace(fetchedProjectID) != "" {
+					metadata["project_id"] = strings.TrimSpace(fetchedProjectID)
+					if raw, errMarshal := json.Marshal(metadata); errMarshal == nil {
+						if file, errOpen := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600); errOpen == nil {
+							_, _ = file.Write(raw)
+							_ = file.Close()
+						}
+					}
+				}
+			}
+		}
 	}
 	info, errStat = os.Stat(path)
 	if errStat != nil {
@@ -334,9 +351,6 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 		auth.Attributes["email"] = email
 	}
 	cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
-	if resolved, selected := proxyregistry.ResolveMetadataProxy(auth.Metadata); selected {
-		auth.ProxyURL = resolved
-	}
 	return []*cliproxyauth.Auth{auth}, nil
 }
 

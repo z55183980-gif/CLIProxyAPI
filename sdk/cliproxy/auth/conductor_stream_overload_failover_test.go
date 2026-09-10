@@ -12,7 +12,7 @@ import (
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 )
 
-// registerOverloadAuths registers n active codex credentials with descending priority so the
+// registerOverloadAuths registers n active codex credentials with ascending priority values so the
 // selection order is deterministic, and returns their IDs in expected pick order.
 func registerOverloadAuths(t *testing.T, m *Manager, n int) []string {
 	t.Helper()
@@ -24,8 +24,8 @@ func registerOverloadAuths(t *testing.T, m *Manager, n int) []string {
 			ID:       id,
 			Provider: "codex",
 			Status:   StatusActive,
-			// Higher priority is picked first, so descending values keep the order stable.
-			Attributes: map[string]string{"priority": fmt.Sprintf("%d", 100-i)},
+			// Lower values are picked first, so ascending values keep the order stable.
+			Attributes: map[string]string{"priority": fmt.Sprintf("%d", i+1)},
 		}
 		reg.RegisterClient(id, "codex", []*registry.ModelInfo{{ID: "gpt-5.6-terra"}})
 		if _, err := m.Register(context.Background(), auth); err != nil {
@@ -105,28 +105,27 @@ func TestExecuteStream_BootstrapOverload_SkipsConsecutiveOverloadedCredentials(t
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(order) != 4 {
-		t.Fatalf("attempted %d credentials (%v), want exactly 4", len(order), order)
+	if len(order) != 13 {
+		t.Fatalf("attempted %d credentials (%v), want exactly 13", len(order), order)
 	}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 12; i++ {
 		if overloaded[order[i]] != true {
 			t.Fatalf("attempt %d used %s, expected one of the overloaded credentials", i+1, order[i])
 		}
 	}
-	if overloaded[order[3]] {
-		t.Fatalf("final attempt used overloaded credential %s", order[3])
+	if overloaded[order[12]] {
+		t.Fatalf("final attempt used overloaded credential %s", order[12])
 	}
 }
 
-// The credential budget must be honoured: when every credential is overloaded the request fails
-// after max-retry-credentials attempts rather than looping forever.
+// Each available credential receives the bounded capacity retry sequence.
 func TestExecuteStream_BootstrapOverload_StopsAtCredentialBudget(t *testing.T) {
 	previous := quotaCooldownDisabled.Load()
 	quotaCooldownDisabled.Store(false)
 	t.Cleanup(func() { quotaCooldownDisabled.Store(previous) })
 
 	m := NewManager(nil, nil, nil)
-	// Six credentials exist and only four may be attempted in one round.
+	// Legacy max-retry-credentials does not override the provider failover budget.
 	m.SetRetryConfig(5, 0, 4)
 	registerOverloadAuths(t, m, 6)
 
@@ -159,10 +158,9 @@ func TestExecuteStream_BootstrapOverload_StopsAtCredentialBudget(t *testing.T) {
 	if attempts == 0 {
 		t.Fatal("expected at least one attempt")
 	}
-	// A no-wait retry round may consume the remaining two credentials after the
-	// first four-credential sweep, but it must not exceed the available set.
-	if attempts < 4 || attempts > 6 {
-		t.Fatalf("attempts = %d, want between 4 and 6", attempts)
+	// Six accounts each receive the initial attempt plus three same-account retries.
+	if attempts != 24 {
+		t.Fatalf("attempts = %d, want 24", attempts)
 	}
 	t.Logf("total upstream attempts across retry sweeps: %d", attempts)
 }

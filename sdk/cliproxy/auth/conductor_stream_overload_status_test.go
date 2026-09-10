@@ -44,9 +44,8 @@ func TestExecuteStream_AllCredentialsOverloaded_ReturnsStatusError(t *testing.T)
 	}
 }
 
-// Contrast: the unbuffered path commits response.created first, so the rejection can only be
-// relayed inside an already-successful stream. The caller gets no error at all.
-func TestExecuteStream_UnbufferedOverload_StaysCommittedStream(t *testing.T) {
+// Codex response.created is staged until output, including without executor buffering.
+func TestExecuteStream_UnbufferedOverload_PreambleRemainsReplayable(t *testing.T) {
 	previous := quotaCooldownDisabled.Load()
 	quotaCooldownDisabled.Store(false)
 	t.Cleanup(func() { quotaCooldownDisabled.Store(previous) })
@@ -69,22 +68,19 @@ func TestExecuteStream_UnbufferedOverload_StaysCommittedStream(t *testing.T) {
 		},
 	})
 
-	result, err := m.ExecuteStream(context.Background(), []string{"codex"},
-		cliproxyexecutor.Request{Model: "gpt-5.6-terra"}, cliproxyexecutor.Options{})
-	if err != nil {
-		t.Fatalf("unbuffered path should hand back a committed stream, got error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("expected a committed stream result")
-	}
-	var sawErr bool
-	for chunk := range result.Chunks {
-		if chunk.Err != nil {
-			sawErr = true
+	result, err := m.ExecuteStream(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: "gpt-5.6-terra"}, cliproxyexecutor.Options{})
+	if err == nil && result != nil {
+		for chunk := range result.Chunks {
+			if len(chunk.Payload) > 0 {
+				t.Fatal("failed preamble leaked")
+			}
+			if chunk.Err != nil {
+				err = chunk.Err
+			}
 		}
 	}
-	if !sawErr {
-		t.Fatal("expected the overload rejection to arrive in-stream")
+	if statusCodeFromError(err) != 503 {
+		t.Fatalf("preamble failure must preserve HTTP 503: %v", err)
 	}
 }
 

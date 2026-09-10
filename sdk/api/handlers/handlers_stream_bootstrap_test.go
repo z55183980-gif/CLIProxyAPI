@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -876,7 +875,7 @@ func TestExecuteStreamWithAuthManager_DoesNotRetryAfterFirstByte(t *testing.T) {
 	}
 }
 
-func TestExecuteStreamWithAuthManager_EnrichesBootstrapRetryAuthUnavailableError(t *testing.T) {
+func TestExecuteStreamWithAuthManager_PreservesCodexFailureWithoutExtraBootstrapRound(t *testing.T) {
 	executor := &failOnceStreamExecutor{}
 	manager := coreauth.NewManager(nil, nil, nil)
 	manager.RegisterExecutor(executor)
@@ -923,22 +922,8 @@ func TestExecuteStreamWithAuthManager_EnrichesBootstrapRetryAuthUnavailableError
 	if gotErr == nil {
 		t.Fatalf("expected terminal error")
 	}
-	if gotErr.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want %d", gotErr.StatusCode, http.StatusServiceUnavailable)
-	}
-
-	var authErr *coreauth.Error
-	if !errors.As(gotErr.Error, &authErr) || authErr == nil {
-		t.Fatalf("expected coreauth.Error, got %T", gotErr.Error)
-	}
-	if authErr.Code != "auth_unavailable" {
-		t.Fatalf("code = %q, want %q", authErr.Code, "auth_unavailable")
-	}
-	if !strings.Contains(authErr.Message, "providers=codex") {
-		t.Fatalf("message missing provider context: %q", authErr.Message)
-	}
-	if !strings.Contains(authErr.Message, "model=test-model") {
-		t.Fatalf("message missing model context: %q", authErr.Message)
+	if gotErr.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status=%d, want original 401", gotErr.StatusCode)
 	}
 
 	if executor.Calls() != 1 {

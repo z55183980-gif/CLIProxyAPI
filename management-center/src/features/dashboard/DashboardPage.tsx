@@ -202,10 +202,10 @@ export function DashboardPage() {
       description: t('dashboard.cta_config_desc'),
     },
     {
-      to: '/accounts',
+      to: '/quota',
       icon: <IconSidebarQuota size={20} />,
-      title: t('nav.accounts'),
-      description: t('nav_meta.accounts'),
+      title: t('nav.quota_management'),
+      description: t('dashboard.cta_quota_desc'),
     },
     {
       to: '/logs',

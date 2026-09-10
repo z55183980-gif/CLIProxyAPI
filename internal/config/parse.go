@@ -27,7 +27,6 @@ func ParseConfigBytes(data []byte) (*Config, error) {
 	cfg.LogsMaxTotalSizeMB = 0
 	cfg.ErrorLogsMaxFiles = 10
 	cfg.UsageStatisticsEnabled = false
-	cfg.Pricing.RateMultiplier = 1
 	cfg.RedisUsageQueueRetentionSeconds = 60
 	cfg.DisableCooling = false
 	cfg.SaveCooldownStatus = false
@@ -41,9 +40,6 @@ func ParseConfigBytes(data []byte) (*Config, error) {
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config payload: %w", err)
-	}
-	if errValidate := cfg.Pricing.Validate(); errValidate != nil {
-		return nil, errValidate
 	}
 
 	cfg.CredentialConcurrency = cfg.CredentialConcurrency.WithDefaults()

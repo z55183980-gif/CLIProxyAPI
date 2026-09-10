@@ -1,0 +1,344 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.mobileControls {
+  display: none;
+}
+.expandedTable {
+  min-width: 0;
+}
+.header,
+.toolbar,
+.tabs,
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.header {
+  justify-content: space-between;
+  h1 {
+    margin: 0 0 6px;
+    font-size: 28px;
+  }
+  p {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 12px;
+}
+.stat,
+.panel {
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  border-radius: 14px;
+  padding: 18px;
+  min-width: 0;
+}
+.stat {
+  span {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+  strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 24px;
+  }
+  small {
+    color: var(--text-secondary);
+  }
+}
+.filters {
+  margin: 14px 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  :global(.form-group) {
+    margin: 0;
+  }
+}
+.primaryFilters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 16px;
+
+  > .filterField {
+    flex-direction: row;
+    align-items: center;
+    flex: 0 1 260px;
+    max-width: 100%;
+
+    > label {
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+  }
+}
+.advancedToggle {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.filterPresets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.tabs,
+.quickRanges {
+  gap: 8px;
+}
+.filterActions {
+  gap: 10px;
+  > label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+}
+.tabs :global(.btn),
+.quickRanges :global(.btn),
+.filterActions :global(.btn),
+.pagination :global(.btn) {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 13px;
+  line-height: 20px;
+}
+.tabs :global(.btn.btn-ghost),
+.quickRanges :global(.btn.btn-ghost),
+.filterActions :global(.btn.btn-ghost) {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.tabs :global(.btn.btn-ghost:hover:not(:disabled)),
+.quickRanges :global(.btn.btn-ghost:hover:not(:disabled)),
+.filterActions :global(.btn.btn-ghost:hover:not(:disabled)) {
+  background: var(--bg-tertiary);
+  border-color: var(--border-hover);
+}
+.quickRanges :global(.btn) {
+  border-radius: 999px;
+}
+.quickRanges :global(.btn.btn-primary) {
+  color: var(--button-primary);
+  border-color: var(--button-primary);
+  background: color-mix(in srgb, var(--button-primary) 10%, var(--bg-primary));
+  box-shadow: none;
+}
+.quickRanges :global(.btn.btn-primary:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--button-primary) 18%, var(--bg-primary));
+}
+.detailLink {
+  display: block;
+  color: var(--button-primary);
+  font-size: 11px;
+}
+.unpriced {
+  color: var(--amber-text);
+  background: var(--amber-10);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-weight: 600;
+}
+.table {
+  overflow: auto;
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  th,
+  td {
+    text-align: left;
+    padding: 12px;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+  }
+  th {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  td small {
+    display: block;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+}
+.pagination {
+  justify-content: space-between;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.pageSizeSelect {
+  min-width: 68px;
+  :global([role='combobox']) {
+    height: 34px;
+    font-size: 13px;
+  }
+}
+.sortField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sortSelect {
+  min-width: 130px;
+}
+.toolbar + .toolbar {
+  margin-top: 12px;
+}
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  h3 {
+    margin: 0 0 16px;
+    font-size: 15px;
+  }
+}
+.bar {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 2fr auto;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0;
+  font-size: 12px;
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  progress {
+    width: 100%;
+    accent-color: var(--primary-color);
+  }
+}
+.muted {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.error {
+  color: var(--danger-color, #c94444);
+  padding: 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+}
+.success {
+  color: var(--success-color, #16815d);
+}
+.failed {
+  color: var(--danger-color, #c94444);
+}
+.columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-top: 12px;
+  label {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+}
+.detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  dt {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  dd {
+    margin: 5px 0 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+}
+.empty {
+  text-align: center;
+  padding: 48px;
+  color: var(--text-secondary);
+}
+.prices input {
+  min-width: 95px;
+}
+.prices td:first-child input {
+  min-width: 200px;
+}
+@media (max-width: 600px) {
+  .detail {
+    grid-template-columns: 1fr;
+  }
+  .header h1 {
+    font-size: 24px;
+  }
+  .stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .stat strong {
+    font-size: 20px;
+  }
+  .mobileControls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .table:not(.expandedTable) [data-column='apiKey'],
+  .table:not(.expandedTable) [data-column='endpoint'],
+  .table:not(.expandedTable) [data-column='ip'],
+  .table:not(.expandedTable) [data-column='userAgent'] {
+    display: none;
+  }
+  .table [data-column='time'] {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--bg-primary);
+    box-shadow: 2px 0 0 var(--border-color);
+  }
+  .table [data-column='time'] :global(.btn) {
+    max-width: 125px;
+    white-space: normal;
+    padding: 4px;
+  }
+  .table th,
+  .table td {
+    padding: 10px 8px;
+  }
+}

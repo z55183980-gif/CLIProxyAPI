@@ -105,13 +105,14 @@ func (e *unauthorizedRefreshExecutor) RefreshCalls() int {
 	return e.refreshCalls
 }
 
+// Legacy OAuth refresh-before-failover remains applicable to Gemini.
 func newUnauthorizedRefreshFixture(t *testing.T, refreshFail bool) (*Manager, *unauthorizedRefreshExecutor, *Auth, *Auth, string) {
 	t.Helper()
 
 	model := "gpt-5.5"
 	primary := &Auth{
 		ID:       "aa-primary",
-		Provider: "codex",
+		Provider: "gemini",
 		Metadata: map[string]any{
 			"access_token":  "stale-access-token",
 			"refresh_token": "primary-refresh-token",
@@ -119,7 +120,7 @@ func newUnauthorizedRefreshFixture(t *testing.T, refreshFail bool) (*Manager, *u
 	}
 	backup := &Auth{
 		ID:       "bb-backup",
-		Provider: "codex",
+		Provider: "gemini",
 		Metadata: map[string]any{
 			"access_token":  "backup-access-token",
 			"refresh_token": "backup-refresh-token",
@@ -127,7 +128,7 @@ func newUnauthorizedRefreshFixture(t *testing.T, refreshFail bool) (*Manager, *u
 	}
 
 	executor := &unauthorizedRefreshExecutor{
-		id: "codex",
+		id: "gemini",
 		tokenInvalid: map[string]struct{}{
 			"stale-access-token": {},
 		},
@@ -141,8 +142,8 @@ func newUnauthorizedRefreshFixture(t *testing.T, refreshFail bool) (*Manager, *u
 	m.RegisterExecutor(executor)
 
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(primary.ID, "codex", []*registry.ModelInfo{{ID: model}})
-	reg.RegisterClient(backup.ID, "codex", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(primary.ID, "gemini", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(backup.ID, "gemini", []*registry.ModelInfo{{ID: model}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(primary.ID)
 		reg.UnregisterClient(backup.ID)
@@ -161,7 +162,7 @@ func newUnauthorizedRefreshFixture(t *testing.T, refreshFail bool) (*Manager, *u
 func TestManager_Execute_UnauthorizedRefreshesCurrentAuthBeforeFallback(t *testing.T) {
 	m, executor, primary, backup, model := newUnauthorizedRefreshFixture(t, false)
 
-	resp, errExecute := m.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
+	resp, errExecute := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
 	if errExecute != nil {
 		t.Fatalf("Execute error = %v, want success on refreshed primary", errExecute)
 	}
@@ -196,7 +197,7 @@ func TestManager_Execute_UnauthorizedRefreshesCurrentAuthBeforeFallback(t *testi
 func TestManager_ExecuteStream_UnauthorizedRefreshesCurrentAuthBeforeFallback(t *testing.T) {
 	m, executor, primary, backup, model := newUnauthorizedRefreshFixture(t, false)
 
-	stream, errStream := m.ExecuteStream(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
+	stream, errStream := m.ExecuteStream(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
 	if errStream != nil {
 		t.Fatalf("ExecuteStream error = %v, want success on refreshed primary", errStream)
 	}
@@ -230,7 +231,7 @@ func TestManager_ExecuteStream_UnauthorizedRefreshesCurrentAuthBeforeFallback(t 
 func TestManager_Execute_UnauthorizedRefreshFailureFallsBackToNextAuth(t *testing.T) {
 	m, executor, primary, backup, model := newUnauthorizedRefreshFixture(t, true)
 
-	resp, errExecute := m.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
+	resp, errExecute := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
 	if errExecute != nil {
 		t.Fatalf("Execute error = %v, want success via backup", errExecute)
 	}
@@ -262,20 +263,20 @@ func TestManager_Execute_UnauthorizedWithoutRefreshTokenDoesNotCallRefresh(t *te
 	model := "gpt-5.5"
 	primary := &Auth{
 		ID:       "aa-primary-api-key",
-		Provider: "codex",
+		Provider: "gemini",
 		Metadata: map[string]any{
 			"access_token": "stale-access-token",
 		},
 	}
 	backup := &Auth{
 		ID:       "bb-backup-api-key",
-		Provider: "codex",
+		Provider: "gemini",
 		Metadata: map[string]any{
 			"access_token": "backup-access-token",
 		},
 	}
 	executor := &unauthorizedRefreshExecutor{
-		id: "codex",
+		id: "gemini",
 		tokenInvalid: map[string]struct{}{
 			"stale-access-token": {},
 		},
@@ -284,8 +285,8 @@ func TestManager_Execute_UnauthorizedWithoutRefreshTokenDoesNotCallRefresh(t *te
 	m.RegisterExecutor(executor)
 
 	reg := registry.GetGlobalRegistry()
-	reg.RegisterClient(primary.ID, "codex", []*registry.ModelInfo{{ID: model}})
-	reg.RegisterClient(backup.ID, "codex", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(primary.ID, "gemini", []*registry.ModelInfo{{ID: model}})
+	reg.RegisterClient(backup.ID, "gemini", []*registry.ModelInfo{{ID: model}})
 	t.Cleanup(func() {
 		reg.UnregisterClient(primary.ID)
 		reg.UnregisterClient(backup.ID)
@@ -297,7 +298,7 @@ func TestManager_Execute_UnauthorizedWithoutRefreshTokenDoesNotCallRefresh(t *te
 		t.Fatalf("register backup: %v", errRegister)
 	}
 
-	resp, errExecute := m.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
+	resp, errExecute := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
 	if errExecute != nil {
 		t.Fatalf("Execute error = %v, want success via backup", errExecute)
 	}
@@ -320,7 +321,7 @@ func TestManager_Execute_UnauthorizedRefreshThenRetryStillFailsFallsBackOnce(t *
 	executor.tokenInvalid["still-invalid-token"] = struct{}{}
 	executor.mu.Unlock()
 
-	resp, errExecute := m.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
+	resp, errExecute := m.Execute(context.Background(), []string{"gemini"}, cliproxyexecutor.Request{Model: model}, cliproxyexecutor.Options{})
 	if errExecute != nil {
 		t.Fatalf("Execute error = %v, want success via backup", errExecute)
 	}

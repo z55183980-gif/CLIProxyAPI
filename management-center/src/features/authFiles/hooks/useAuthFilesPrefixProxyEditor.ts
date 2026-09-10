@@ -34,6 +34,7 @@ type AuthFileEditorErrorKey = AuthFileHeadersErrorKey | AuthFileWeightErrorKey;
 export type PrefixProxyEditorField =
   | 'prefix'
   | 'proxyUrl'
+  | 'proxyId'
   | 'priority'
   | 'weight'
   | 'disableCooling'
@@ -58,6 +59,7 @@ export type PrefixProxyEditorState = {
   providerKey: string;
   prefix: string;
   proxyUrl: string;
+  proxyId?: string;
   priority: string;
   weight: string;
   weightError: string | null;
@@ -282,9 +284,15 @@ export const buildAuthFileFieldsPatch = (
     patch.prefix = nextPrefix;
   }
 
+  const originalProxyId = normalizeTextField(original.proxy_id);
+  const nextProxyId = (editor.proxyId ?? originalProxyId).trim();
+  if (nextProxyId !== originalProxyId) patch.proxy_id = nextProxyId;
   const originalProxyURL = normalizeTextField(original.proxy_url);
   const nextProxyURL = editor.proxyUrl.trim();
-  if (nextProxyURL !== originalProxyURL) {
+  if (
+    !nextProxyId &&
+    (nextProxyURL !== originalProxyURL || (nextProxyId !== originalProxyId && nextProxyURL))
+  ) {
     patch.proxy_url = nextProxyURL;
   }
 
@@ -391,6 +399,11 @@ const buildPrefixProxyUpdatedText = (
     } else {
       delete next.prefix;
     }
+  }
+  if (patch.proxy_id !== undefined) {
+    if (patch.proxy_id) next.proxy_id = patch.proxy_id;
+    else delete next.proxy_id;
+    delete next.proxy_url;
   }
   if (patch.proxy_url !== undefined) {
     if (patch.proxy_url) {
@@ -503,6 +516,7 @@ export function useAuthFilesPrefixProxyEditor(
       providerKey: fileProviderKey,
       prefix: '',
       proxyUrl: '',
+      proxyId: '',
       priority: '',
       weight: '',
       weightError: null,
@@ -587,6 +601,7 @@ export function useAuthFilesPrefixProxyEditor(
           providerKey,
           prefix,
           proxyUrl,
+          proxyId: normalizeTextField(json.proxy_id),
           priority: priority !== undefined ? String(priority) : '',
           weight: weight !== undefined ? String(weight) : '',
           weightError: null,
@@ -623,6 +638,7 @@ export function useAuthFilesPrefixProxyEditor(
     setPrefixProxyEditor((prev) => {
       if (!prev) return prev;
       if (field === 'prefix') return { ...prev, prefix: String(value) };
+      if (field === 'proxyId') return { ...prev, proxyId: String(value), proxyUrl: '' };
       if (field === 'proxyUrl') return { ...prev, proxyUrl: String(value) };
       if (field === 'priority') return { ...prev, priority: String(value) };
       if (field === 'weight') {

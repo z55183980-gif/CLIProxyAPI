@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/api"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/usagehistory"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
@@ -49,9 +51,6 @@ func (s *Service) Run(ctx context.Context) error {
 		s.homeMu.Unlock()
 	}()
 
-	if errPricing := s.configurePricing(ctx, s.cfg); errPricing != nil {
-		return fmt.Errorf("configure pricing: %w", errPricing)
-	}
 	usage.StartDefault(ctx)
 	homeEnabled := s.cfg != nil && s.cfg.Home.Enabled
 	if homeEnabled {
@@ -74,6 +73,22 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	s.applyRetryConfig(s.cfg)
+	if !homeEnabled {
+		store, errHistory := usagehistory.Open(filepath.Join(filepath.Dir(s.configPath), ".usage-history", "usage.db"))
+		if errHistory != nil {
+			return fmt.Errorf("open usage history: %w", errHistory)
+		}
+		s.usageHistory = store
+		usagehistory.SetActive(store)
+		usage.RegisterNamedPlugin("local-usage-history", &usagehistory.Plugin{Store: store, AccountLabel: func(id string) string {
+			if s.coreManager != nil {
+				if auth, ok := s.coreManager.GetByID(id); ok {
+					return auth.Label
+				}
+			}
+			return ""
+		}})
+	}
 	s.configureCooldownStateStore(s.cfg)
 
 	s.registerPluginAuthParser()
@@ -119,21 +134,7 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	// handlers no longer depend on legacy clients; pass nil slice initially
-	serverOptions := append([]api.ServerOption{}, s.serverOptions...)
-	serverOptions = append(serverOptions, api.WithBillingUsageProvider(func(ctx context.Context) ([]usage.AccountTotal, error) {
-		s.pricingMu.Lock()
-		sink, _ := s.pricingSink.(*usage.SQLChargeSink)
-		totals := s.pricingTotals
-		s.pricingMu.Unlock()
-		if sink != nil {
-			return sink.Aggregate(ctx)
-		}
-		if totals != nil {
-			return totals.Snapshot(), nil
-		}
-		return []usage.AccountTotal{{Account: "total"}}, nil
-	}))
-	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, serverOptions...)
+	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, s.serverOptions...)
 	s.syncPluginRuntimeConfig(ctx)
 	if homeEnabled {
 		s.syncPluginModelRuntime(ctx)
@@ -305,7 +306,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		if s.coreManager != nil {
 			s.coreManager.StopAutoRefresh()
 		}
-		s.closePricing()
 		if s.watcher != nil {
 			if err := s.watcher.Stop(); err != nil {
 				log.Errorf("failed to stop file watcher: %v", err)
@@ -364,6 +364,12 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		}
 
 		usage.StopDefault()
+		if s.usageHistory != nil {
+			usage.DefaultManager().WaitStopped()
+			if err := s.usageHistory.Close(); err != nil && shutdownErr == nil {
+				shutdownErr = err
+			}
+		}
 	})
 	return shutdownErr
 }

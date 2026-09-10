@@ -422,8 +422,8 @@ func TestExecuteModelStreamStartupError(t *testing.T) {
 	if errMsg == nil {
 		t.Fatal("ExecuteModelStream() error = nil, want startup error")
 	}
-	if errMsg.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", errMsg.StatusCode, http.StatusInternalServerError)
+	if errMsg.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", errMsg.StatusCode, http.StatusBadGateway)
 	}
 	if errMsg.Error == nil || errMsg.Error.Error() != "startup failed" {
 		t.Fatalf("error = %v, want startup failed", errMsg.Error)

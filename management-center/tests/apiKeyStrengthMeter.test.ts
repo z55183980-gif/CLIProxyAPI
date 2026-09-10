@@ -6,7 +6,7 @@ import { ApiKeyStrengthMeter } from '@/features/config/components/blocks/ApiKeyS
 import { SEGMENT_STAGGER_MS, segmentFillDelayMs } from '@/features/config/components/blocks/shared';
 import { generateSecureApiKey } from '@/utils/apiKey';
 
-const LOCALES = ['en', 'zh-CN', 'zh-TW', 'ru'];
+const LOCALES = ['en', 'zh-CN'];
 
 describe('ApiKeyStrengthMeter', () => {
   test('exposes the tier through the progressbar', () => {

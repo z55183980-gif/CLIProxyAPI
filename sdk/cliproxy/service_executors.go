@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/pluginhost"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
@@ -199,7 +200,15 @@ func (s *Service) registerAvailableExecutors(ctx context.Context, opts executorR
 
 func baselineExecutorAuths() []*coreauth.Auth {
 	providers := []string{
+		"codex",
 		"claude",
+		constant.Gemini,
+		constant.GeminiInteractions,
+		"vertex",
+		"aistudio",
+		"antigravity",
+		"kimi",
+		"xai",
 		"openai-compatibility",
 	}
 	auths := make([]*coreauth.Auth, 0, len(providers))
@@ -236,6 +245,19 @@ func (s *Service) registerExecutorForAuth(a *coreauth.Auth, forceReplace bool) {
 	s.cfgMu.RLock()
 	cfg := s.cfg
 	s.cfgMu.RUnlock()
+	if strings.EqualFold(strings.TrimSpace(a.Provider), "codex") {
+		if !forceReplace {
+			existingExecutor, hasExecutor := s.coreManager.Executor("codex")
+			if hasExecutor {
+				_, isCodexAutoExecutor := existingExecutor.(*executor.CodexAutoExecutor)
+				if isCodexAutoExecutor {
+					return
+				}
+			}
+		}
+		s.coreManager.RegisterExecutor(executor.NewCodexAutoExecutor(cfg))
+		return
+	}
 	// Skip disabled auth entries when (re)binding executors.
 	// Disabled auths can linger during config reloads (e.g., removed OpenAI-compat entries)
 	// and must not override active provider executors.
@@ -253,8 +275,34 @@ func (s *Service) registerExecutorForAuth(a *coreauth.Auth, forceReplace bool) {
 		return
 	}
 	switch strings.ToLower(a.Provider) {
+	case constant.Gemini:
+		s.coreManager.RegisterExecutor(executor.NewGeminiExecutor(cfg))
+	case constant.GeminiInteractions:
+		s.coreManager.RegisterExecutor(executor.NewGeminiInteractionsExecutor(cfg))
+	case "vertex":
+		s.coreManager.RegisterExecutor(executor.NewGeminiVertexExecutor(cfg))
+	case "aistudio":
+		if s.wsGateway != nil {
+			s.coreManager.RegisterExecutor(executor.NewAIStudioExecutor(cfg, a.ID, s.wsGateway))
+		}
+		return
+	case "antigravity":
+		s.coreManager.RegisterExecutor(executor.NewAntigravityExecutor(cfg))
 	case "claude":
 		s.coreManager.RegisterExecutor(executor.NewClaudeExecutor(cfg))
+	case "kimi":
+		s.coreManager.RegisterExecutor(executor.NewKimiExecutor(cfg))
+	case "xai":
+		if !forceReplace {
+			existingExecutor, hasExecutor := s.coreManager.Executor("xai")
+			if hasExecutor {
+				existingXAIAutoExecutor, isXAIAutoExecutor := existingExecutor.(*executor.XAIAutoExecutor)
+				if isXAIAutoExecutor && existingXAIAutoExecutor.UsesConfig(cfg) {
+					return
+				}
+			}
+		}
+		s.coreManager.RegisterExecutor(executor.NewXAIAutoExecutor(cfg))
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {

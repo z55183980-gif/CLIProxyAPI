@@ -231,6 +231,13 @@ func TestManagerClaudeRefreshCancellationStopsWithoutCooldown(t *testing.T) {
 			manager, auth, model := newClaudeCancellationTestManager(t, executor, nil)
 
 			errExecute := tt.run(ctx, manager, model)
+			if tt.name != "count tokens" {
+				defer cancel()
+				if statusCodeFromError(errExecute) != 401 || executor.refreshCalls.Load() != 0 {
+					t.Fatalf("generation 401 must fail over without inline refresh: %v", errExecute)
+				}
+				return
+			}
 			if !errors.Is(errExecute, context.Canceled) {
 				t.Fatalf("error = %v, want context.Canceled", errExecute)
 			}
@@ -280,7 +287,7 @@ func TestManagerClaudeStreamTailCancellationIsAvailabilityNeutral(t *testing.T) 
 	requireClaudeCancellationNeutral(t, manager, auth.ID, model)
 }
 
-func TestManagerClaudeUpstreamFailureStillCoolsCredential(t *testing.T) {
+func TestManagerClaude500DoesNotAddLegacyCooldown(t *testing.T) {
 	executor := &claudeCancellationTestExecutor{
 		executeFn: func(context.Context, *Auth) (cliproxyexecutor.Response, error) {
 			return cliproxyexecutor.Response{}, &Error{HTTPStatus: http.StatusInternalServerError, Message: "upstream failure"}
@@ -297,8 +304,8 @@ func TestManagerClaudeUpstreamFailureStillCoolsCredential(t *testing.T) {
 		t.Fatalf("GetByID(%q) did not return auth", auth.ID)
 	}
 	state := got.ModelStates[model]
-	if state == nil || !state.Unavailable || state.NextRetryAfter.IsZero() {
-		t.Fatalf("upstream failure did not cool model: %#v", state)
+	if got.Unavailable || state != nil && state.Unavailable {
+		t.Fatalf("ordinary Claude 500 must not cool account: %#v", state)
 	}
 }
 

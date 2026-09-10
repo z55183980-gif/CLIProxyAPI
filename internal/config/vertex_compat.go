@@ -18,7 +18,7 @@ type VertexCompatKey struct {
 	APIKey string `yaml:"api-key" json:"api-key"`
 
 	// Priority controls selection preference when multiple credentials match.
-	// Higher values are preferred; defaults to 0.
+	// Lower values are preferred; defaults to 0.
 	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
 
 	// Weight controls proportional selection under weighted-round-robin.

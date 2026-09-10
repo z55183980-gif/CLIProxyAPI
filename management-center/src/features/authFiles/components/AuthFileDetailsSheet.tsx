@@ -1,11 +1,14 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { proxiesApi, type ProxyAccount } from '@/services/api/proxies';
 import { useTranslation } from 'react-i18next';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { useNotificationStore } from '@/stores';
+import { useAuthStore } from '@/stores';
 import type {
   PrefixProxyEditorField,
   PrefixProxyEditorFieldValue,
@@ -19,7 +22,7 @@ import { MAX_CREDENTIAL_WEIGHT } from '@/utils/credentialWeight';
 import { AuthFileExcludedModelsField } from './AuthFileExcludedModelsField';
 import styles from './AuthFileDetailsSheet.module.scss';
 
-/** API 边界归一化补写的派生字段——INFO 视图里只展示后端原始形状，避免重复噪音。 */
+/** Hide normalized derived fields in INFO to show the original backend shape once. */
 const DERIVED_INFO_KEYS = [
   'successCount',
   'failureCount',
@@ -28,7 +31,7 @@ const DERIVED_INFO_KEYS = [
   'authIndex',
   'statusMessage',
   'modified',
-  // 'email' 不在此列：后端原始键名与 camelCase 同形，删掉会藏起真实数据。
+  // Keep email: its normalized and raw field names are identical.
   'projectId',
 ];
 
@@ -44,13 +47,34 @@ export type AuthFileDetailsSheetProps = {
 };
 
 /**
- * 凭证详情/编辑抽屉：替代旧的居中 Modal，与提供商工作台的 Sheet 模式一致。
- * 脏状态下关闭（Escape/遮罩/×/取消）先走确认对话框。
+ * Credential details editor, using the same Sheet as the provider workbench.
+ * Confirm before closing with unsaved changes through any dismiss action.
  */
 export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
   const { t } = useTranslation();
   const { disableControls, editor, updatedText, dirty, onClose, onCopyText, onSave, onChange } =
     props;
+  const [proxies, setProxies] = useState<ProxyAccount[]>([]);
+  const [proxyError, setProxyError] = useState('');
+  const apiBase = useAuthStore((state) => state.apiBase);
+  const managementKey = useAuthStore((state) => state.managementKey);
+  const fileName = editor?.fileName;
+  useEffect(() => {
+    if (!fileName) return;
+    const request = new AbortController();
+    setProxies([]);
+    setProxyError('');
+    proxiesApi
+      .list(request.signal)
+      .then((items) => {
+        if (!request.signal.aborted) setProxies(items);
+      })
+      .catch((error: unknown) => {
+        if (!request.signal.aborted)
+          setProxyError(error instanceof Error ? error.message : String(error));
+      });
+    return () => request.abort();
+  }, [fileName, apiBase, managementKey]);
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
 
   const confirmClose = useCallback((): boolean | Promise<boolean> => {
@@ -97,7 +121,7 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
         return JSON.stringify(record, null, 2);
       }
     } catch {
-      /* 非 JSON 原样展示 */
+      /* Display non-JSON content unchanged. */
     }
     return fileInfoText;
   }, [fileInfoText]);
@@ -181,11 +205,38 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
                     disabled={disableControls || editor.saving || !editor.json}
                     onChange={(e) => onChange('prefix', e.target.value)}
                   />
+                  <div className="form-group">
+                    <label htmlFor="auth-proxy-id">{t('management.bindProxy')}</label>
+                    <Select
+                      id="auth-proxy-id"
+                      ariaLabel={t('management.bindProxy')}
+                      value={editor.proxyId || ''}
+                      disabled={disableControls || editor.saving}
+                      onChange={(value) => onChange('proxyId', value)}
+                      options={[
+                        { value: '', label: t('management.manualProxy') },
+                        ...(editor.proxyId && !proxies.some((p) => p.id === editor.proxyId)
+                          ? [{ value: editor.proxyId, label: editor.proxyId }]
+                          : []),
+                        ...proxies.map((p) => ({
+                          value: p.id,
+                          label: `${p.name} · ${p.protocol}://${p.host}:${p.port}`,
+                        })),
+                      ]}
+                    />
+                    {proxyError && (
+                      <div role="alert" className={styles.error}>
+                        {proxyError}
+                      </div>
+                    )}
+                  </div>
                   <Input
                     label={t('auth_files.proxy_url_label')}
                     value={editor.proxyUrl}
                     placeholder={t('auth_files.proxy_url_placeholder')}
-                    disabled={disableControls || editor.saving || !editor.json}
+                    disabled={
+                      disableControls || editor.saving || !editor.json || Boolean(editor.proxyId)
+                    }
                     onChange={(e) => onChange('proxyUrl', e.target.value)}
                   />
                   <Input

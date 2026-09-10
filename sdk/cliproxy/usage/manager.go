@@ -20,17 +20,16 @@ const AutoServiceTier = "auto"
 
 // Record contains the usage statistics captured for a single provider request.
 type Record struct {
-	// RequestID is the stable client/proxy request identifier when available.
-	// Billing sinks should use it as the primary idempotency key.
-	RequestID string
-	Provider  string
+	Provider string
 	// ExecutorType stores the concrete executor type that handled the request.
-	ExecutorType string
-	Model        string
-	Alias        string
-	APIKey       string
-	AuthID       string
-	AuthIndex    string
+	ExecutorType    string
+	Model           string
+	Alias           string
+	APIKey          string
+	SessionID       string
+	ParentSessionID string
+	AuthID          string
+	AuthIndex       string
 	// AccessTokenSHA256 identifies the OAuth token version without exposing the token.
 	AccessTokenSHA256 string
 	AuthType          string
@@ -56,6 +55,9 @@ type Record struct {
 	Failed      bool
 	Fail        Failure
 	Detail      Detail
+	// Optional account billing snapshots. Nil uses token cost and a multiplier of one.
+	AccountStatsCost      *float64
+	AccountRateMultiplier *float64
 	// ResponseHeaders stores a snapshot of upstream response headers for usage sinks.
 	ResponseHeaders http.Header
 }
@@ -74,9 +76,12 @@ type Detail struct {
 	CachedTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
-	TotalTokens         int64
-	TokenBreakdown      TokenBreakdown
-	ResponseServiceTier string
+	// Cache creation TTL buckets are subsets of CacheCreationTokens.
+	CacheCreation5mTokens int64
+	CacheCreation1hTokens int64
+	TotalTokens           int64
+	TokenBreakdown        TokenBreakdown
+	ResponseServiceTier   string
 }
 
 type requestedModelAliasContextKey struct{}
@@ -258,6 +263,7 @@ type Manager struct {
 	cond   *sync.Cond
 	queue  []queueItem
 	closed bool
+	done   chan struct{}
 
 	pluginsMu sync.RWMutex
 	plugins   []Plugin
@@ -266,7 +272,7 @@ type Manager struct {
 
 // NewManager constructs a manager with a buffered queue.
 func NewManager(buffer int) *Manager {
-	m := &Manager{}
+	m := &Manager{done: make(chan struct{})}
 	m.cond = sync.NewCond(&m.mu)
 	return m
 }
@@ -355,6 +361,7 @@ func (m *Manager) Publish(ctx context.Context, record Record) {
 }
 
 func (m *Manager) run(ctx context.Context) {
+	defer close(m.done)
 	for {
 		m.mu.Lock()
 		for !m.closed && len(m.queue) == 0 {
@@ -415,3 +422,6 @@ func StartDefault(ctx context.Context) { DefaultManager().Start(ctx) }
 
 // StopDefault stops the default manager's dispatcher.
 func StopDefault() { DefaultManager().Stop() }
+
+// WaitStopped waits for a stopped dispatcher to finish delivering queued records.
+func (m *Manager) WaitStopped() { m.Start(context.Background()); <-m.done }

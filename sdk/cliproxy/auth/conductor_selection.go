@@ -531,6 +531,19 @@ func selectionArgForSelector(selector Selector, routeModel string) string {
 	return routeModel
 }
 
+func selectorContextForAvailableAuths(ctx context.Context, selector Selector, routeModel string) context.Context {
+	ctx = withWeightedSelectorStateModel(ctx, selector, routeModel)
+	if !isBuiltInSelector(selector) {
+		if _, sessionAffinity := selector.(*SessionAffinitySelector); !sessionAffinity {
+			return ctx
+		}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, prevalidatedAuthCandidatesKey{}, true)
+}
+
 func restoreModelCooldownErrorModel(err error, requestedModel string) error {
 	if err == nil || requestedModel == "" {
 		return err
@@ -1164,6 +1177,9 @@ func (m *Manager) shouldRetryAfterErrorWithHomeRetryLimit(ctx context.Context, o
 }
 
 func (m *Manager) shouldRetryAfterErrorWithAttempted(ctx context.Context, opts cliproxyexecutor.Options, err error, attempt int, providers []string, model string, maxWait time.Duration, homeRetryLimit int, defaultRequestRetry int, attempted map[string]struct{}) (time.Duration, bool) {
+	if sub2apiState(ctx) != nil {
+		return 0, false
+	}
 	if err == nil {
 		return 0, false
 	}
@@ -1172,19 +1188,10 @@ func (m *Manager) shouldRetryAfterErrorWithAttempted(ctx context.Context, opts c
 		return 0, false
 	}
 	status := statusCodeFromError(err)
-	if status == 0 && isRetryableConnectionLifecycleError(err) {
-		status = http.StatusServiceUnavailable
-	}
 	if status == http.StatusOK {
 		return 0, false
 	}
 	if isRequestInvalidError(err) || isRequestStopError(err) {
-		return 0, false
-	}
-	// Transport failures often have no HTTP status (connection reset,
-	// unexpected EOF, TLS/proxy failure). Treat those as retryable upstream
-	// failures so Claude can move to the next credential or retry round.
-	if status == 0 && !isRetryableConnectionLifecycleError(err) {
 		return 0, false
 	}
 	if m.HomeEnabled() {
@@ -1240,13 +1247,6 @@ func (m *Manager) shouldRetryAfterErrorWithAttempted(ctx context.Context, opts c
 		return *retryAfter, true
 	}
 	return 0, true
-}
-
-func isRetryableConnectionLifecycleError(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	return isConnectionLifecycleError(err)
 }
 
 func (m *Manager) homeRetryAllowed(attempt int, retryLimit int) bool {
@@ -1547,7 +1547,7 @@ func (m *Manager) pickNextLegacy(ctx context.Context, provider, model string, op
 		return nil, nil, errPick
 	}
 	if !handled {
-		selectorCtx := withWeightedSelectorStateModel(ctx, selector, model)
+		selectorCtx := selectorContextForAvailableAuths(ctx, selector, model)
 		selected, errPick = selector.Pick(selectorCtx, provider, selectionArgForSelector(selector, model), opts, selectorAuths)
 		if errPick != nil {
 			if isBuiltInSelector(selector) {
@@ -1880,7 +1880,7 @@ func (m *Manager) pickNextMixedLegacy(ctx context.Context, providers []string, m
 		return nil, nil, "", errPick
 	}
 	if !handled {
-		selectorCtx := withWeightedSelectorStateModel(ctx, selector, model)
+		selectorCtx := selectorContextForAvailableAuths(ctx, selector, model)
 		selected, errPick = selector.Pick(selectorCtx, "mixed", selectionArgForSelector(selector, model), opts, selectorAuths)
 		if errPick != nil {
 			if isBuiltInSelector(selector) {

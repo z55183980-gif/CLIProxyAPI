@@ -5,7 +5,6 @@ package cliproxy
 
 import (
 	"context"
-	"database/sql"
 	"sync"
 	"time"
 
@@ -13,13 +12,13 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/homeplugins"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/pluginhost"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/usagehistory"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/wsrelay"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executionregistry"
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
 	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginstore"
 )
@@ -28,6 +27,7 @@ import (
 // It manages the complete lifecycle including authentication, file watching, HTTP server,
 // and integration with various AI service providers.
 type Service struct {
+	usageHistory *usagehistory.Store
 	// cfg holds the current application configuration.
 	cfg *config.Config
 
@@ -96,11 +96,6 @@ type Service struct {
 
 	// pluginHost owns dynamic plugin lifecycle and runtime capability adapters.
 	pluginHost *pluginhost.Host
-
-	pricingMu     sync.Mutex
-	pricingDB     *sql.DB
-	pricingSink   usage.ChargeSink
-	pricingTotals *usage.BillingTotals
 
 	// shutdownOnce ensures shutdown is called only once.
 	shutdownOnce sync.Once
