@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 )
 
@@ -124,6 +125,11 @@ func readStreamBootstrap(ctx context.Context, ch <-chan cliproxyexecutor.StreamC
 func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, resultModel, routeModel string, headers http.Header, buffered []cliproxyexecutor.StreamChunk, remaining <-chan cliproxyexecutor.StreamChunk, aliasResult OAuthModelAliasResult, ephemeralResult bool, opts cliproxyexecutor.Options) *cliproxyexecutor.StreamResult {
 	out := make(chan cliproxyexecutor.StreamChunk)
 	streamStart := time.Now()
+	if !ephemeralResult {
+		// Quota headers arrive with the response head. Record them now: a stream
+		// the client abandons never reaches the result bookkeeping below.
+		m.observeStreamQuotaSignals(ctx, auth, provider, resultModel, routeModel, headers)
+	}
 	go func() {
 		defer close(out)
 		var failed bool
@@ -465,4 +471,40 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 		lastErr = &Error{Code: "auth_not_found", Message: "no upstream model available"}
 	}
 	return nil, preferredExecutionAttemptError(lastErr, upstreamErr)
+}
+
+// observeStreamQuotaSignals stores the passive quota snapshot of a stream whose
+// response head has been accepted. It only touches observation data; success,
+// failure and cooldown accounting stay with MarkResult.
+func (m *Manager) observeStreamQuotaSignals(ctx context.Context, auth *Auth, provider, resultModel, routeModel string, headers http.Header) {
+	if m == nil || auth == nil || auth.ID == "" || !ProviderSupportsQuotaObservation(provider) {
+		return
+	}
+	if observed := logging.GetResponseHeaders(ctx); len(observed) > 0 {
+		headers = observed
+	}
+	if len(headers) == 0 {
+		return
+	}
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	live, ok := m.auths[auth.ID]
+	if !ok || live == nil {
+		return
+	}
+	modelKey := canonicalModelKey(resultModel)
+	if modelKey == "" && strings.TrimSpace(routeModel) != "" {
+		modelKey = m.selectionModelKeyForAuth(live, routeModel)
+		if modelKey == "" {
+			modelKey = canonicalModelKey(routeModel)
+		}
+	}
+	changed := live.Quota.ObserveResponseHeadersForProvider(provider, headers, now)
+	if modelState := existingModelState(live, modelKey); modelState != nil {
+		changed = modelState.Quota.ObserveResponseHeadersForProvider(provider, headers, now) || changed
+	}
+	if changed {
+		_ = m.persist(ctx, live)
+	}
 }
