@@ -57,13 +57,12 @@ func TestUsageWindowsActiveRequestsAndCache(t *testing.T) {
 				return result
 			}
 			if provider == "claude" {
-				query("passive")
-				if calls != 0 {
-					t.Fatal("Claude passive called upstream")
+				if first := query("passive"); calls != 0 || first.ObservedAt != nil {
+					t.Fatalf("Claude passive called upstream or invented an observation: %+v", first)
 				}
 			}
 			active := query("active")
-			if active.Windows[0].UsedPercent != 17 {
+			if active.Windows[0].UsedPercent != 17 || active.ObservedAt == nil {
 				t.Fatalf("active=%+v", active)
 			}
 			passive := query("passive")
@@ -154,6 +153,10 @@ func TestClaudePassiveAndActiveWindows(t *testing.T) {
 	expired := claudeObservedWindows(signals, now, now.Add(6*time.Hour))
 	if expired[0].UsedPercent != 0 || expired[0].ResetAt != nil || expired[1].UsedPercent != 41 {
 		t.Fatalf("expiration=%+v", expired)
+	}
+	rolled := claudeObservedWindows(signals, now, now.Add(49*time.Hour))
+	if len(rolled) != 2 || rolled[1].ID != "seven-day-fable" || rolled[1].UsedPercent != 0 || rolled[1].ResetAt != nil {
+		t.Fatalf("weekly rollover=%+v", rolled)
 	}
 	if _, err := claudeActiveWindows([]byte(`{"five_hour":"bad"}`)); err == nil {
 		t.Fatal("malformed active response accepted")

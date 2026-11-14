@@ -98,3 +98,14 @@ export function usageResetText(
   if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
   return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
 }
+
+/** Age of the last upstream observation, or null when there is none yet. */
+export function usageObservedAge(observedAt: string | undefined, now: number): string | null {
+  const at = observedAt ? Date.parse(observedAt) : NaN;
+  if (!Number.isFinite(at)) return null;
+  const minutes = Math.floor(Math.max(0, now - at) / 60000);
+  if (minutes < 1) return '';
+  const hours = Math.floor(minutes / 60);
+  if (hours >= 24) return `${Math.floor(hours / 24)}d`;
+  return hours > 0 ? `${hours}h` : `${minutes}m`;
+}

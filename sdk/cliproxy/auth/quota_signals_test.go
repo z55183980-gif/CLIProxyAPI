@@ -328,6 +328,27 @@ func TestObserveResponseHeadersKeepsSnapshotWhenResponseCarriesNoSignal(t *testi
 	}
 }
 
+// A Retry-After-only response (overload, burst 429) says nothing about the
+// usage windows and must neither erase them nor refresh ObservedAt.
+func TestObserveResponseHeadersKeepsWindowsOnRetryAfterOnlyResponse(t *testing.T) {
+	var quota QuotaState
+	quota.ObserveResponseHeadersForProvider("claude", http.Header{
+		"Anthropic-Ratelimit-Unified-5h-Utilization": []string{"0.67"},
+		"Anthropic-Ratelimit-Unified-7d-Utilization": []string{"1"},
+	}, time.Unix(100, 0))
+	if quota.ObserveResponseHeadersForProvider("claude", http.Header{"Retry-After": []string{"5"}}, time.Unix(200, 0)) {
+		t.Fatal("Retry-After-only response replaced the window snapshot")
+	}
+	if quota.Signals["Anthropic-Ratelimit-Unified-7d-Utilization"] != "1" || !quota.ObservedAt.Equal(time.Unix(100, 0)) {
+		t.Fatalf("snapshot was disturbed: %#v", quota)
+	}
+
+	var empty QuotaState
+	if !empty.ObserveResponseHeadersForProvider("claude", http.Header{"Retry-After": []string{"5"}}, time.Unix(200, 0)) || empty.Signals["Retry-After"] != "5" {
+		t.Fatalf("Retry-After was not recorded on an empty snapshot: %#v", empty)
+	}
+}
+
 // ObservedAt must advance even when the watermark values are unchanged,
 // otherwise consumers cannot tell a fresh reading from a stale one.
 func TestObserveResponseHeadersAdvancesObservedAtOnRepeatedValues(t *testing.T) {

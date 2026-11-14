@@ -1220,6 +1220,8 @@
     "window_query": "查询",
     "window_query_hint": "刷新用量窗口",
     "window_passive": "被动采样",
+    "window_observed": "{{age}}前更新",
+    "window_observed_now": "刚刚更新",
     "window_credit_expiry": "到期 {{time}}",
     "window_credit_details": "重置次数到期明细",
     "window_count": "次数",
