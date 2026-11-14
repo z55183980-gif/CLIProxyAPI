@@ -1220,6 +1220,8 @@
     "window_query": "Query",
     "window_query_hint": "Refresh usage windows",
     "window_passive": "Passive sample",
+    "window_observed": "Updated {{age}} ago",
+    "window_observed_now": "Updated just now",
     "window_credit_expiry": "Expires {{time}}",
     "window_credit_details": "Reset credit expiration details",
     "window_count": "Credits",

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
 import type { CodexQuotaState } from '../src/types';
-import { usageWindowsFor, usageResetText } from '../src/features/quota/usageWindows';
+import { usageObservedAge, usageWindowsFor, usageResetText } from '../src/features/quota/usageWindows';
 import { ChannelWindowRows } from '../src/features/quota/components/ChannelUsageWindowCell';
 import { UsageWindowCell } from '../src/features/quota/components/UsageWindowCell';
 import zhCN from '../src/i18n/locales/zh-CN.json';
@@ -158,5 +158,17 @@ describe('compact usage windows', () => {
     expect(
       enabled.match(new RegExp(`<button[^>]*title="${zhCN.codex_quota.reset_button}"[^>]*>`))?.[0]
     ).not.toContain('disabled');
+  });
+});
+
+describe('usageObservedAge', () => {
+  test('reports how old the last upstream observation is', () => {
+    const now = Date.parse('2026-11-14T12:00:00Z');
+    expect(usageObservedAge(undefined, now)).toBeNull();
+    expect(usageObservedAge('not a date', now)).toBeNull();
+    expect(usageObservedAge('2026-11-14T12:00:30Z', now)).toBe('');
+    expect(usageObservedAge('2026-11-14T11:18:00Z', now)).toBe('42m');
+    expect(usageObservedAge('2026-11-14T04:00:00Z', now)).toBe('8h');
+    expect(usageObservedAge('2026-11-11T12:00:00Z', now)).toBe('3d');
   });
 });

@@ -12,6 +12,8 @@ export interface AccountUsageWindow {
 export interface AccountUsageWindows {
   windows: AccountUsageWindow[];
   source: 'active' | 'passive';
+  /** When the percentages were last read from upstream. */
+  observedAt?: string;
   error?: string;
   statsError?: string;
 }

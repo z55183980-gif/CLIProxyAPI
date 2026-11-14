@@ -28,10 +28,12 @@ type accountUsageWindow struct {
 }
 
 type accountUsageWindows struct {
-	Windows    []accountUsageWindow `json:"windows"`
-	Source     string               `json:"source"`
-	Error      string               `json:"error,omitempty"`
-	StatsError string               `json:"statsError,omitempty"`
+	Windows []accountUsageWindow `json:"windows"`
+	Source  string               `json:"source"`
+	// ObservedAt is when the returned percentages were last read from upstream.
+	ObservedAt *time.Time `json:"observedAt,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	StatsError string     `json:"statsError,omitempty"`
 }
 
 // Each credential serializes probes. Cached active samples never alter scheduler state.
@@ -120,6 +122,10 @@ func (h *Handler) GetAccountUsageWindows(c *gin.Context) {
 				}
 			}
 		}
+	}
+	if !cache.observedAt.IsZero() {
+		observed := cache.observedAt.UTC()
+		result.ObservedAt = &observed
 	}
 	if store := usagehistory.Active(); store != nil {
 		for i := range result.Windows {
@@ -262,6 +268,10 @@ func claudeObservedWindows(signals map[string]string, observed, now time.Time) [
 			if w.ResetAt == nil || !now.Before(*w.ResetAt) {
 				w.UsedPercent, w.ResetAt = 0, nil
 			}
+		} else if w.ResetAt != nil && !now.Before(*w.ResetAt) {
+			// The weekly window rolled over since the last observation; the
+			// stored percentage belongs to the previous window.
+			w.UsedPercent, w.ResetAt = 0, nil
 		}
 		windows = append(windows, w)
 	}

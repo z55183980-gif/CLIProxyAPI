@@ -5,7 +5,7 @@ import { useNow } from '@/hooks/useNow';
 import { useAuthStore, useQuotaStore } from '@/stores';
 import { accountUsageWindowsApi, type AccountUsageWindows } from '@/services/api/usageWindows';
 import type { CodexQuotaState } from '@/types';
-import { usageResetText } from '../usageWindows';
+import { usageObservedAge, usageResetText } from '../usageWindows';
 import { channelUsageCache } from '../channelUsageCache';
 import type { UsageWindowCellProps } from './UsageWindowCell';
 import styles from './UsageWindowCell.module.scss';
@@ -118,6 +118,8 @@ export function ChannelUsageWindowCell({
     .sort((a, b) => Date.parse(a) - Date.parse(b));
   const count = credits?.rateLimitResetCreditsAvailableCount;
   const windowError = error || data?.error || data?.statsError;
+  // Percentages only move when the account serves traffic, so show how old they are.
+  const observedAge = usageObservedAge(data?.observedAt, now);
 
   return (
     <div className={styles.cell} aria-busy={loading}>
@@ -126,6 +128,16 @@ export function ChannelUsageWindowCell({
       <div className={styles.actions}>
         {type === 'claude' && data?.source === 'passive' && (
           <span className={styles.resetTime}>{t('quota_management.window_passive')}</span>
+        )}
+        {observedAge !== null && (
+          <span
+            className={styles.resetTime}
+            title={data?.observedAt ? new Date(data.observedAt).toLocaleString() : undefined}
+          >
+            {observedAge
+              ? t('quota_management.window_observed', { age: observedAge })
+              : t('quota_management.window_observed_now')}
+          </span>
         )}
         <button
           type="button"

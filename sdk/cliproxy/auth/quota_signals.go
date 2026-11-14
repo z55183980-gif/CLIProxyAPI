@@ -31,6 +31,10 @@ func ProviderSupportsQuotaObservation(provider string) bool {
 // accumulating signals across responses would leave an expired value visible
 // indefinitely. Responses that carry no quota signal at all (transport
 // failures, 5xx, unrelated endpoints) leave the previous snapshot untouched.
+// So does a response that carries only Retry-After (an overload or burst 429
+// without window headers) while the snapshot holds usage-window watermarks:
+// such a response says nothing about the windows, so it must not erase them
+// or make them look freshly observed.
 //
 // This function only ever touches ObservedAt and Signals. Cooldown and
 // scheduling fields are never read or written here.
@@ -45,12 +49,26 @@ func (q *QuotaState) ObserveResponseHeadersForProvider(provider string, headers 
 	if len(next) == 0 {
 		return false
 	}
+	if !hasQuotaWindowSignal(next) && hasQuotaWindowSignal(q.Signals) {
+		return false
+	}
 	if observedAt.IsZero() {
 		observedAt = time.Now()
 	}
 	q.Signals = next
 	q.ObservedAt = observedAt
 	return true
+}
+
+// hasQuotaWindowSignal reports whether the snapshot carries any signal other
+// than Retry-After, i.e. an actual usage-window watermark.
+func hasQuotaWindowSignal(signals map[string]string) bool {
+	for name := range signals {
+		if !strings.EqualFold(name, "Retry-After") {
+			return true
+		}
+	}
+	return false
 }
 
 // ClearObservationSignals removes only passive observation data. It leaves
